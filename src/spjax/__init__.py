@@ -1,2 +1,9 @@
-def hello() -> str:
-    return "Hello from spjax!"
+from .encoding import DimLevelType, SparseEncoding
+from .tensor import SparseTensorSpec, SparseTensor
+
+__all__ = [
+    "DimLevelType",
+    "SparseEncoding",
+    "SparseTensorSpec",
+    "SparseTensor",
+]
