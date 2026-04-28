@@ -2,7 +2,8 @@ from spjax import SparseTensor
 
 
 def main() -> None:
-    SparseTensor.from_file("./matrix/ibm32.mtx")
+    m = SparseTensor.from_file("./matrix/ibm32.mtx")
+    print("nnz:", m.nnz)
 
 
 if __name__ == "__main__":
