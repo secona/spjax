@@ -1,5 +1,3 @@
-import jax.numpy as jnp
-
 from spjax import SparseTensor
 
 
