@@ -133,7 +133,11 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "jax" },
+    { name = "scipy" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "jax" }]
+requires-dist = [
+    { name = "jax" },
+    { name = "scipy", specifier = ">=1.17.1" },
+]

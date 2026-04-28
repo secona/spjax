@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "jax",
+    "scipy>=1.17.1",
 ]
 
 [build-system]
