@@ -1,8 +1,12 @@
+import jax
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node
 
 class SparseTensor:
     nnz: int
+    values: jax.Array
+    row: jax.Array
+    col: jax.Array
 
     def __init__(self, nnz, values, row, col) -> None:
         self.nnz = nnz
