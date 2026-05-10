@@ -22,6 +22,7 @@ def print_sparse_matrix(m: SparseTensor):
             row_str.append(f"{val:>4}" if val != 0 else "   .")
         print(" ".join(row_str))
 
+
 @jax.jit
 def add(x, y):
     return x + y

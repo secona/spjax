@@ -14,6 +14,7 @@
         devShells.default = pkgs.mkShell {
           packages = [
             python
+            pkgs.ruff
             pkgs.uv
           ];
         };

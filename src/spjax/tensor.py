@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node
 
+
 class SparseTensor:
     nnz: int
     values: jax.Array
@@ -42,20 +43,25 @@ class SparseTensor:
         m_coo = scipy.io.mmread(filename)
         nnz = m_coo.nnz
         pos = jnp.array([0, nnz])
-        crd = jnp.stack([
-            jnp.asarray(m_coo.row),
-            jnp.asarray(m_coo.col),
-        ])
+        crd = jnp.stack(
+            [
+                jnp.asarray(m_coo.row),
+                jnp.asarray(m_coo.col),
+            ]
+        )
         return cls(nnz, jnp.asarray(m_coo.data), pos, crd)
+
 
 def sparse_tensor_flatten(obj):
     children = (obj.values, obj.pos, obj.crd)
     aux_data = (obj.nnz,)
     return (children, aux_data)
 
+
 def sparse_tensor_unflatten(aux_data, children):
     values, pos, crd = children
-    nnz, = aux_data
+    (nnz,) = aux_data
     return SparseTensor(nnz, values, pos, crd)
+
 
 register_pytree_node(SparseTensor, sparse_tensor_flatten, sparse_tensor_unflatten)
