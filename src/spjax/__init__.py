@@ -1,8 +1,8 @@
-from .encoding import DimLevelType, SparseEncoding
+from .encoding import LevelFormat, SparseEncoding
 from .tensor import SparseTensor
 
 __all__ = [
-    "DimLevelType",
+    "LevelFormat",
     "SparseEncoding",
     "SparseTensor",
 ]
