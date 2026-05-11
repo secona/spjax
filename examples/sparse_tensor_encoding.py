@@ -23,7 +23,6 @@ def print_sparse_matrix(m: SparseTensor):
         print(" ".join(row_str))
 
 
-@jax.jit
 def add(x, y):
     return x + y
 
@@ -32,8 +31,9 @@ def main() -> None:
     print(jax.devices())
     a = SparseTensor.from_file("./matrix/ibm32.mtx")
     b = SparseTensor.from_file("./matrix/Hamrle1.mtx")
-    c = add(a, b)
+    c = jax.jit(add)(a, b)
     print_sparse_matrix(c)
+    print(jax.jit(add).lower(a, b).as_text())
 
 
 if __name__ == "__main__":

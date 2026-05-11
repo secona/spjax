@@ -11,9 +11,9 @@ class SparseTensor:
 
     def __init__(self, nnz, values, pos, crd) -> None:
         self.nnz = nnz
-        self.values = jnp.asarray(values)
-        self.pos = jnp.asarray(pos)
-        self.crd = jnp.asarray(crd)
+        self.values = values
+        self.pos = pos
+        self.crd = crd
 
     @property
     def row(self) -> jax.Array:
