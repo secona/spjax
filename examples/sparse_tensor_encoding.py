@@ -29,6 +29,7 @@ def add(x, y):
 
 
 def main() -> None:
+    print(jax.devices())
     a = SparseTensor.from_file("./matrix/ibm32.mtx")
     b = SparseTensor.from_file("./matrix/Hamrle1.mtx")
     c = add(a, b)
