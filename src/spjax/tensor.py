@@ -51,6 +51,35 @@ class SparseTensor:
         )
         return cls(nnz, jnp.asarray(m_coo.data), pos, crd)
 
+    @classmethod
+    def from_dense(cls) -> None:
+        pass
+
+    def to_dense_str(self) -> str:
+        if self.crd.shape[0] != 2:
+            raise ValueError("to_dense_str only supports 2D tensors")
+
+        rows = self.row.tolist()
+        cols = self.col.tolist()
+        vals = self.values.tolist()
+
+        num_rows = max(self.row) + 1
+        num_cols = max(self.col) + 1
+
+        sparse_map = {}
+        for r, c, v in zip(rows, cols, vals):
+            coords = (int(r), int(c))
+            sparse_map[coords] = sparse_map.get(coords, 0) + v
+
+        lines = []
+        for r in range(num_rows):
+            row_str = []
+            for c in range(num_cols):
+                val = int(sparse_map.get((r, c), 0))
+                row_str.append(f"{val:>4}" if val != 0 else "   .")
+            lines.append(" ".join(row_str))
+        return "\n".join(lines)
+
 
 def sparse_tensor_flatten(obj):
     children = (obj.values, obj.pos, obj.crd)
