@@ -27,5 +27,23 @@ mlir.register_lowering(
 )
 
 
-def sparse_dot(X: SparseTensor, y: jax.Array) -> jax.Array:
+def _spmm(X: SparseTensor, Y: SparseTensor) -> jax.Array:
+    M, K = X.shape
+    K2, N = Y.shape
+    assert K == K2
+
+    valid = X.crd[1][:, None] == Y.crd[0][None, :]
+    vals = X.values[:, None] * Y.values[None, :]
+    vals = jnp.where(valid, vals, 0)
+
+    rows = X.crd[0][:, None]
+    cols = Y.crd[1][None, :]
+
+    out = jnp.zeros((M, N), dtype=X.values.dtype)
+    return out.at[rows, cols].add(vals)
+
+
+def sparse_dot(X: SparseTensor, y: SparseTensor | jax.Array) -> jax.Array:
+    if isinstance(y, SparseTensor):
+        return _spmm(X, y)
     return sparse_dot_p.bind(X.values, X.pos, X.crd, y, shape=X.shape)
