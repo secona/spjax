@@ -8,12 +8,14 @@ class SparseTensor:
     values: jax.Array
     pos: jax.Array
     crd: jax.Array
+    shape: tuple[int, ...]
 
-    def __init__(self, nnz, values, pos, crd) -> None:
+    def __init__(self, nnz, values, pos, crd, shape) -> None:
         self.nnz = nnz
         self.values = values
         self.pos = pos
         self.crd = crd
+        self.shape = shape
 
     @property
     def row(self) -> jax.Array:
@@ -29,7 +31,8 @@ class SparseTensor:
             new_crd = jnp.concatenate([self.crd, other.crd], axis=1)
             new_nnz = new_values.shape[0]
             new_pos = jnp.array([0, new_nnz])
-            return SparseTensor(new_nnz, new_values, new_pos, new_crd)
+            new_shape = self.shape
+            return SparseTensor(new_nnz, new_values, new_pos, new_crd, new_shape)
 
         raise NotImplemented
 
@@ -49,7 +52,8 @@ class SparseTensor:
                 jnp.asarray(m_coo.col),
             ]
         )
-        return cls(nnz, jnp.asarray(m_coo.data), pos, crd)
+        shape = (int(m_coo.row.max()) + 1, int(m_coo.col.max()) + 1)
+        return cls(nnz, jnp.asarray(m_coo.data), pos, crd, shape)
 
     @classmethod
     def from_dense(cls) -> None:
@@ -63,8 +67,8 @@ class SparseTensor:
         cols = self.col.tolist()
         vals = self.values.tolist()
 
-        num_rows = max(self.row) + 1
-        num_cols = max(self.col) + 1
+        num_rows = self.shape[0]
+        num_cols = self.shape[1]
 
         sparse_map = {}
         for r, c, v in zip(rows, cols, vals):
@@ -83,14 +87,14 @@ class SparseTensor:
 
 def sparse_tensor_flatten(obj):
     children = (obj.values, obj.pos, obj.crd)
-    aux_data = (obj.nnz,)
+    aux_data = (obj.nnz, obj.shape)
     return (children, aux_data)
 
 
 def sparse_tensor_unflatten(aux_data, children):
     values, pos, crd = children
-    (nnz,) = aux_data
-    return SparseTensor(nnz, values, pos, crd)
+    (nnz, shape) = aux_data
+    return SparseTensor(nnz, values, pos, crd, shape)
 
 
 register_pytree_node(SparseTensor, sparse_tensor_flatten, sparse_tensor_unflatten)
