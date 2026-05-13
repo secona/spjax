@@ -8,7 +8,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        python = pkgs.python313;
+        python = pkgs.python312;
       in
       {
         devShells.default = pkgs.mkShell {
