@@ -25,7 +25,7 @@ class SparseTensor:
     def col(self) -> jax.Array:
         return self.crd[1]
 
-    def __add__(self, other) -> SparseTensor:
+    def __add__(self, other) -> 'SparseTensor':
         if isinstance(other, SparseTensor):
             new_values = jnp.concatenate([self.values, other.values])
             new_crd = jnp.concatenate([self.crd, other.crd], axis=1)
@@ -37,7 +37,7 @@ class SparseTensor:
         raise NotImplemented
 
     @classmethod
-    def from_file(cls, filename) -> SparseTensor:
+    def from_file(cls, filename) -> 'SparseTensor':
         try:
             import scipy
         except:
@@ -56,7 +56,7 @@ class SparseTensor:
         return cls(nnz, jnp.asarray(m_coo.data), pos, crd, shape)
 
     @classmethod
-    def from_dense(cls, arr) -> SparseTensor:
+    def from_dense(cls, arr) -> 'SparseTensor':
         try:
             import scipy
         except:
