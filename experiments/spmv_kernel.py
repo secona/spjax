@@ -23,5 +23,6 @@ def main() -> None:
 
     spmv(X, y).block_until_ready()
 
+
 if __name__ == "__main__":
     main()

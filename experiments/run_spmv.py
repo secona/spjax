@@ -4,17 +4,22 @@ from pathlib import Path
 
 MATRIX_DIR = Path("matrix")
 EXPERIMENTS_DIR = Path("experiments")
-PYTHON = sys.executable # resolves to the uv venv python
+PYTHON = sys.executable  # resolves to the uv venv python
 
 
 def run_nsys_profile(matrix_path: Path) -> None:
     name = matrix_path.stem
     output_prefix = EXPERIMENTS_DIR / name
     cmd = [
-        "nsys", "profile",
-        "-t", "cuda",
-        "-o", str(output_prefix),
-        PYTHON, str(EXPERIMENTS_DIR / "spmv_kernel.py"), str(matrix_path)
+        "nsys",
+        "profile",
+        "-t",
+        "cuda",
+        "-o",
+        str(output_prefix),
+        PYTHON,
+        str(EXPERIMENTS_DIR / "spmv_kernel.py"),
+        str(matrix_path),
     ]
 
     result = subprocess.run(cmd, check=False)
