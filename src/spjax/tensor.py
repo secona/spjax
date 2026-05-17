@@ -25,19 +25,13 @@ class SparseTensor:
     def col(self) -> jax.Array:
         return self.crd[1]
 
-    def __add__(self, other) -> 'SparseTensor':
-        if isinstance(other, SparseTensor):
-            new_values = jnp.concatenate([self.values, other.values])
-            new_crd = jnp.concatenate([self.crd, other.crd], axis=1)
-            new_nnz = new_values.shape[0]
-            new_pos = jnp.array([0, new_nnz])
-            new_shape = self.shape
-            return SparseTensor(new_nnz, new_values, new_pos, new_crd, new_shape)
+    def __add__(self, other) -> "SparseTensor":
+        from .primitive import sparse_add
 
-        raise NotImplemented
+        return sparse_add(self, other)
 
     @classmethod
-    def from_file(cls, filename) -> 'SparseTensor':
+    def from_file(cls, filename) -> "SparseTensor":
         try:
             import scipy
         except:
@@ -56,7 +50,7 @@ class SparseTensor:
         return cls(nnz, jnp.asarray(m_coo.data), pos, crd, shape)
 
     @classmethod
-    def from_dense(cls, arr) -> 'SparseTensor':
+    def from_dense(cls, arr) -> "SparseTensor":
         try:
             import scipy
         except:
@@ -67,7 +61,9 @@ class SparseTensor:
         pos = jnp.array([0, nnz])
         crd = jnp.stack([jnp.asarray(coo.row), jnp.asarray(coo.col)])
         shape = arr.shape
-        return SparseTensor(nnz, jnp.asarray(coo.data, dtype=arr.dtype), pos, crd, shape)
+        return SparseTensor(
+            nnz, jnp.asarray(coo.data, dtype=arr.dtype), pos, crd, shape
+        )
 
     def to_dense_str(self) -> str:
         if self.crd.shape[0] != 2:
