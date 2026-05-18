@@ -11,6 +11,7 @@ class LevelType(ABC):
     def pos_access(self, p_k) -> tuple[int, bool]: ...
 
 
+@jax.tree_util.register_pytree_node_class
 class CompressedLevel(LevelType):
     pos: jax.Array
     crd: jax.Array
@@ -28,6 +29,18 @@ class CompressedLevel(LevelType):
         i_k = int(self.crd[p_k])
         return i_k, True
 
+    def tree_flatten(self):
+        children = (self.pos, self.crd)
+        aux_data = ()
+        return children, aux_data
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        pos, crd = children
+        return cls(pos, crd)
+
+
+@jax.tree_util.register_pytree_node_class
 class SingletonLevel(LevelType):
     crd: jax.Array
 
@@ -40,6 +53,16 @@ class SingletonLevel(LevelType):
     def pos_access(self, p_k) -> tuple[int, bool]:
         i_k = int(self.crd[p_k])
         return i_k, True
+
+    def tree_flatten(self):
+        children = (self.crd,)
+        aux_data = ()
+        return children, aux_data
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        crd, = children
+        return cls(crd)
 
 
 class LevelFormat(str, Enum):

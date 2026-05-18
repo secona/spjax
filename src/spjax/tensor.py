@@ -2,6 +2,8 @@ import jax
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node
 
+from spjax import encoding
+
 
 class SparseTensor:
     nnz: int
@@ -9,13 +11,15 @@ class SparseTensor:
     pos: jax.Array
     crd: jax.Array
     shape: tuple[int, ...]
+    lvls: list[encoding.LevelType]
 
-    def __init__(self, nnz, values, pos, crd, shape) -> None:
+    def __init__(self, nnz, values, pos, crd, shape, lvls) -> None:
         self.nnz = nnz
         self.values = values
         self.pos = pos
         self.crd = crd
         self.shape = shape
+        self.lvls = lvls
 
     @property
     def row(self) -> jax.Array:
@@ -52,7 +56,15 @@ class SparseTensor:
             ]
         )
         shape = (int(m_coo.row.max()) + 1, int(m_coo.col.max()) + 1)
-        return cls(nnz, jnp.asarray(m_coo.data), pos, crd, shape)
+
+        compressed_lvl = encoding.CompressedLevel(
+            pos=jnp.array([0, nnz]), crd=jnp.asarray(m_coo.row)
+        )
+
+        singleton_lvl = encoding.SingletonLevel(crd=jnp.asarray(m_coo.col))
+
+        lvls = [compressed_lvl, singleton_lvl]
+        return cls(nnz, jnp.asarray(m_coo.data), pos, crd, shape, lvls)
 
     @classmethod
     def from_dense(cls, arr) -> "SparseTensor":
@@ -97,15 +109,15 @@ class SparseTensor:
 
 
 def sparse_tensor_flatten(obj):
-    children = (obj.values, obj.pos, obj.crd)
+    children = (obj.values, obj.pos, obj.crd, obj.lvls)
     aux_data = (obj.nnz, obj.shape)
     return (children, aux_data)
 
 
 def sparse_tensor_unflatten(aux_data, children):
-    values, pos, crd = children
+    values, pos, crd, lvls = children
     (nnz, shape) = aux_data
-    return SparseTensor(nnz, values, pos, crd, shape)
+    return SparseTensor(nnz, values, pos, crd, shape, lvls)
 
 
 register_pytree_node(SparseTensor, sparse_tensor_flatten, sparse_tensor_unflatten)

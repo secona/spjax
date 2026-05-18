@@ -87,7 +87,7 @@ def sparse_add(a: SparseTensor, b: SparseTensor) -> SparseTensor:
         a.values, a.crd, b.values, b.crd, shape=a.shape
     )
     nnz = values.shape[0]
-    return SparseTensor(nnz, values, pos, crd, a.shape)
+    return SparseTensor(nnz, values, pos, crd, a.shape, a.lvls)
 
 
 mlir.register_lowering(
@@ -104,6 +104,7 @@ sparse_mul_p.multiple_results = True
 
 @sparse_mul_p.def_abstract_eval
 def sparse_mul_abstract_eval(v1, c1, v2, c2):
+    del c2
     out_nnz = min(v1.shape[0], v2.shape[0])
     return (
         ShapedArray((out_nnz,), v1.dtype),
@@ -130,7 +131,7 @@ def sparse_mul_impl(v1, c1, v2, c2):
 
 def sparse_mul(a: SparseTensor, b: SparseTensor) -> SparseTensor:
     v, p, c = sparse_mul_p.bind(a.values, a.crd, b.values, b.crd)
-    return SparseTensor(v.shape[0], v, p, c, a.shape)
+    return SparseTensor(v.shape[0], v, p, c, a.shape, a.lvls)
 
 
 mlir.register_lowering(
