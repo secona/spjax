@@ -5,14 +5,20 @@ from jax.interpreters import mlir
 
 from .tensor import SparseTensor
 
+# ------------------------------------------------------------------------------
+# sparse_dot
+# ------------------------------------------------------------------------------
+
 sparse_dot_p = Primitive("sparse_dot")
 
 
+@sparse_dot_p.def_abstract_eval
 def sparse_dot_abstract_eval(values, pos, crd, dense_vec, *, shape):
     del pos, crd, dense_vec
     return ShapedArray((shape[0],), values.dtype)
 
 
+@sparse_dot_p.def_impl
 def sparse_dot_impl(values, pos, crd, dense_vec, *, shape):
     del pos
     out = jnp.zeros(shape[0], dtype=values.dtype)
@@ -20,8 +26,6 @@ def sparse_dot_impl(values, pos, crd, dense_vec, *, shape):
     return out
 
 
-sparse_dot_p.def_abstract_eval(sparse_dot_abstract_eval)
-sparse_dot_p.def_impl(sparse_dot_impl)
 mlir.register_lowering(
     sparse_dot_p, mlir.lower_fun(sparse_dot_impl, multiple_results=False)
 )
@@ -49,13 +53,17 @@ def sparse_dot(X: SparseTensor, y: SparseTensor | jax.Array) -> jax.Array:
     return sparse_dot_p.bind(X.values, X.pos, X.crd, y, shape=X.shape)
 
 
+# ------------------------------------------------------------------------------
+# sparse_add
+# ------------------------------------------------------------------------------
+
 sparse_add_p = Primitive("sparse_add")
 sparse_add_p.multiple_results = True
 
 
 @sparse_add_p.def_abstract_eval
 def sparse_add_abstract_eval(v1, c1, v2, c2, *, shape):
-    del shape
+    del shape, c2
     out_nnz = v1.shape[0] + v2.shape[0]
     return (
         ShapedArray((out_nnz,), v1.dtype),
