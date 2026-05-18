@@ -31,17 +31,9 @@ class SparseTensor:
         return sparse_add(self, other)
 
     def __mul__(self, other) -> "SparseTensor":
-        assert self.shape == other.shape
+        from .primitive import sparse_mul
 
-        match = (self.crd[:, :, None] == other.crd[:, None, :]).all(axis=0)
-        self_idx, other_idx = jnp.where(match)
-
-        new_values = self.values[self_idx] * other.values[other_idx]
-        new_crd = self.crd[:, self_idx]
-        new_nnz = new_values.shape[0]
-        new_pos = jnp.array([0, new_nnz])
-
-        return SparseTensor(new_nnz, new_values, new_pos, new_crd, self.shape)
+        return sparse_mul(self, other)
 
     @classmethod
     def from_file(cls, filename) -> "SparseTensor":

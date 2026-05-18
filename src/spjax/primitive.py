@@ -93,3 +93,46 @@ def sparse_add(a: SparseTensor, b: SparseTensor) -> SparseTensor:
 mlir.register_lowering(
     sparse_add_p, mlir.lower_fun(sparse_add_impl, multiple_results=True)
 )
+
+# ------------------------------------------------------------------------------
+# sparse_mul
+# ------------------------------------------------------------------------------
+
+sparse_mul_p = Primitive("sparse_mul")
+sparse_mul_p.multiple_results = True
+
+
+@sparse_mul_p.def_abstract_eval
+def sparse_mul_abstract_eval(v1, c1, v2, c2):
+    out_nnz = min(v1.shape[0], v2.shape[0])
+    return (
+        ShapedArray((out_nnz,), v1.dtype),
+        ShapedArray((2,), c1.dtype),
+        ShapedArray((2, out_nnz), c1.dtype),
+    )
+
+
+@sparse_mul_p.def_impl
+def sparse_mul_impl(v1, c1, v2, c2):
+    max_nnz = min(v1.shape[0], v2.shape[0])
+    match = (c1[:, :, None] == c2[:, None, :]).all(axis=0)
+    self_idx, other_idx = jnp.where(match, size=max_nnz, fill_value=0)
+
+    num_matches = jnp.count_nonzero(match)
+    mask = jnp.arange(max_nnz) < num_matches
+
+    new_values = jnp.where(mask, v1[self_idx] * v2[other_idx], 0)
+    new_crd = jnp.where(mask[None, :], c1[:, self_idx], 0)
+    new_pos = jnp.array([0, max_nnz])
+
+    return (new_values, new_pos, new_crd)
+
+
+def sparse_mul(a: SparseTensor, b: SparseTensor) -> SparseTensor:
+    v, p, c = sparse_mul_p.bind(a.values, a.crd, b.values, b.crd)
+    return SparseTensor(v.shape[0], v, p, c, a.shape)
+
+
+mlir.register_lowering(
+    sparse_mul_p, mlir.lower_fun(sparse_mul_impl, multiple_results=True)
+)
