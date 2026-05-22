@@ -40,13 +40,7 @@ class SparseTensor:
         return sparse_mul(self, other)
 
     @classmethod
-    def from_file(cls, filename) -> "SparseTensor":
-        try:
-            import scipy
-        except:
-            raise ImportError("Failed to import SciPy for reading sparse tensor")
-
-        m_coo = scipy.io.mmread(filename)
+    def _from_coo(cls, m_coo):
         nnz = m_coo.nnz
         pos = jnp.array([0, nnz])
         crd = jnp.stack(
@@ -67,6 +61,16 @@ class SparseTensor:
         return cls(nnz, jnp.asarray(m_coo.data), pos, crd, shape, lvls)
 
     @classmethod
+    def from_file(cls, filename) -> "SparseTensor":
+        try:
+            import scipy
+        except:
+            raise ImportError("Failed to import SciPy for reading sparse tensor")
+
+        m_coo = scipy.io.mmread(filename)
+        return cls._from_coo(m_coo)
+
+    @classmethod
     def from_dense(cls, arr) -> "SparseTensor":
         try:
             import scipy
@@ -74,13 +78,7 @@ class SparseTensor:
             raise ImportError("Failed to import SciPy for reading sparse tensor")
 
         coo = scipy.sparse.coo_matrix(arr)
-        nnz = coo.nnz
-        pos = jnp.array([0, nnz])
-        crd = jnp.stack([jnp.asarray(coo.row), jnp.asarray(coo.col)])
-        shape = arr.shape
-        return SparseTensor(
-            nnz, jnp.asarray(coo.data, dtype=arr.dtype), pos, crd, shape
-        )
+        return cls._from_coo(coo)
 
     def to_dense_str(self) -> str:
         if self.crd.shape[0] != 2:
