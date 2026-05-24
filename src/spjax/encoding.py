@@ -10,6 +10,18 @@ class LevelType(ABC):
     @abstractmethod
     def pos_access(self, p_k) -> tuple[int, bool]: ...
 
+    @abstractmethod
+    def append_coord(self, p_k, i_k): ...
+
+    @abstractmethod
+    def append_edges(self, p_k_minus_1, pbegin_k, pend_k): ...
+
+    @abstractmethod
+    def append_init(self, sz_k_minus_1, sz_k): ...
+
+    @abstractmethod
+    def append_finalize(self, sz_k_minus_1, sz_k): ...
+
 
 @jax.tree_util.register_pytree_node_class
 class CompressedLevel(LevelType):
@@ -28,6 +40,23 @@ class CompressedLevel(LevelType):
     def pos_access(self, p_k) -> tuple[int, bool]:
         i_k = int(self.crd[p_k])
         return i_k, True
+
+    def append_coord(self, p_k, i_k):
+        self.crd = self.crd.at[p_k].set(i_k)
+
+    def append_edges(self, p_k_minus_1, pbegin_k, pend_k):
+        self.pos = self.pos.at[p_k_minus_1 + 1].set(pend_k - pbegin_k)
+
+    def append_init(self, sz_k_minus_1, sz_k):
+        del sz_k
+        for p_k_minus_1 in range(sz_k_minus_1 + 1):
+            self.pos = self.pos.at[p_k_minus_1].set(0)
+
+    def append_finalize(self, sz_k_minus_1, sz_k):
+        cumsum = self.pos[0]
+        for p_k_minus_1 in range(1, sz_k_minus_1 + 1):
+            cumsum += self.pos[p_k_minus_1]
+            self.pos = self.pos.at[p_k_minus_1].set(cumsum)
 
     def tree_flatten(self):
         children = (self.pos, self.crd)
@@ -59,8 +88,24 @@ class SingletonLevel(LevelType):
         aux_data = ()
         return children, aux_data
 
+    def append_coord(self, p_k, i_k):
+        self.crd = self.crd.at[p_k].set(i_k)
+
+    def append_edges(self, p_k_minus_1, pbegin_k, pend_k):
+        del p_k_minus_1, pbegin_k, pend_k
+        return
+
+    def append_init(self, sz_k_minus_1, sz_k):
+        del sz_k_minus_1, sz_k
+        return
+
+    def append_finalize(self, sz_k_minus_1, sz_k):
+        del sz_k_minus_1, sz_k
+        return
+
     @classmethod
     def tree_unflatten(cls, aux_data, children):
+        del aux_data
         crd, = children
         return cls(crd)
 
