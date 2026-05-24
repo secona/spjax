@@ -18,7 +18,6 @@ def sparse_dot_abstract_eval(values, pos, crd, dense_vec, *, shape):
     return ShapedArray((shape[0],), values.dtype)
 
 
-@sparse_dot_p.def_impl
 def sparse_dot_impl(values, pos, crd, dense_vec, *, shape):
     del pos
     out = jnp.zeros(shape[0], dtype=values.dtype)
@@ -72,7 +71,6 @@ def sparse_add_abstract_eval(v1, c1, v2, c2, *, shape):
     )
 
 
-@sparse_add_p.def_impl
 def sparse_add_impl(v1, c1, v2, c2, *, shape):
     del shape
     new_values = jnp.concatenate([v1, v2])
@@ -113,7 +111,6 @@ def sparse_mul_abstract_eval(v1, c1, v2, c2):
     )
 
 
-@sparse_mul_p.def_impl
 def sparse_mul_impl(v1, c1, v2, c2):
     max_nnz = min(v1.shape[0], v2.shape[0])
     match = (c1[:, :, None] == c2[:, None, :]).all(axis=0)
