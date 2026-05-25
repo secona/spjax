@@ -12,51 +12,89 @@ from .tensor import SparseTensor
 # ------------------------------------------------------------------------------
 
 
+def _scatter_inner(lvl1, vals, parent_pos, coord0, out):
+    """Scatter inner level of a 2D sparse tensor into a dense output."""
+    if lvl1.supports_coord_pos_iter:
+        p1_begin, p1_end = lvl1.pos_bounds(parent_pos)
+
+        def inner_body(p1, out):
+            coord1, _ = lvl1.pos_access(p1)
+            return out.at[coord0, coord1].add(vals[p1])
+
+        return lax.fori_loop(p1_begin, p1_end, inner_body, out)
+
+    elif lvl1.supports_coord_value_iter:
+        i1_begin, i1_end = lvl1.coord_bounds(parent_pos)
+
+        def inner_body(i1, out):
+            coord1, _ = lvl1.coord_access(parent_pos, i1)
+            inner_size = i1_end - i1_begin  # == lvl1.size
+            return out.at[coord0, coord1].add(vals[coord0 * inner_size + coord1])
+
+        return lax.fori_loop(i1_begin, i1_end, inner_body, out)
+
+    else:
+        raise ValueError(
+            f"Level 1 format {type(lvl1).__name__} does not support iteration"
+        )
+
+
+def _scatter_tensor(tensor: SparseTensor, out: jax.Array) -> jax.Array:
+    """Generic scatter of a 2D sparse tensor into a dense output array."""
+    lvls = tensor.lvls
+    vals = tensor.values
+
+    if len(lvls) != 2:
+        raise NotImplementedError("sparse_add currently supports only 2D tensors")
+
+    if vals.size == 0:
+        return out
+
+    lvl0 = lvls[0]
+    lvl1 = lvls[1]
+
+    if lvl0.supports_coord_pos_iter:
+        p0_begin, p0_end = lvl0.pos_bounds(0)
+
+        def outer_body(p0, out):
+            coord0, _ = lvl0.pos_access(p0)
+            return _scatter_inner(lvl1, vals, p0, coord0, out)
+
+        return lax.fori_loop(p0_begin, p0_end, outer_body, out)
+
+    elif lvl0.supports_coord_value_iter:
+        i0_begin, i0_end = lvl0.coord_bounds(0)
+
+        def outer_body(i0, out):
+            coord0, _ = lvl0.coord_access(0, i0)
+            return _scatter_inner(lvl1, vals, coord0, coord0, out)
+
+        return lax.fori_loop(i0_begin, i0_end, outer_body, out)
+
+    else:
+        raise ValueError(
+            f"Level 0 format {type(lvl0).__name__} does not support iteration"
+        )
+
+
 def sparse_add(a: SparseTensor, b: SparseTensor) -> jax.Array:
-    a_vals = a.values
-    a_row = a.lvls[0].crd
-    a_col = a.lvls[1].crd
+    if a.shape != b.shape:
+        raise ValueError(f"Shape mismatch: {a.shape} vs {b.shape}")
 
-    b_vals = b.values
-    b_row = b.lvls[0].crd
-    b_col = b.lvls[1].crd
+    if len(a.lvls) != len(b.lvls):
+        raise ValueError(
+            f"Level count mismatch: {len(a.lvls)} vs {len(b.lvls)}"
+        )
 
-    return _sparse_add_jit(
-        a_vals,
-        a_row,
-        a_col,
-        b_vals,
-        b_row,
-        b_col,
-        shape=a.shape,
-    )
+    for i, (la, lb) in enumerate(zip(a.lvls, b.lvls)):
+        if type(la) != type(lb):
+            raise ValueError(
+                f"Level {i} format mismatch: {type(la).__name__} vs {type(lb).__name__}"
+            )
 
-
-@partial(jax.jit, static_argnames=("shape",))
-def _sparse_add_jit(
-    a_vals,
-    a_row,
-    a_col,
-    b_vals,
-    b_row,
-    b_col,
-    *,
-    shape,
-):
-    out = jnp.zeros(shape, dtype=a_vals.dtype)
-
-    def scatter_a(i, acc):
-        r = a_row[i]
-        c = a_col[i]
-        return acc.at[r, c].add(a_vals[i])
-
-    def scatter_b(i, acc):
-        r = b_row[i]
-        c = b_col[i]
-        return acc.at[r, c].add(b_vals[i])
-
-    out = lax.fori_loop(0, a_vals.shape[0], scatter_a, out)
-    out = lax.fori_loop(0, b_vals.shape[0], scatter_b, out)
+    out = jnp.zeros(a.shape, dtype=a.values.dtype)
+    out = _scatter_tensor(a, out)
+    out = _scatter_tensor(b, out)
     return out
 
 

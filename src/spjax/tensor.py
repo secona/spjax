@@ -139,7 +139,7 @@ class SparseTensor:
             row_str = []
             for c in range(num_cols):
                 val = float(sparse_map.get((r, c), 0.0))
-                row_str.append(f"{val:>6.2f}" if val != 0.0 else "     .")
+                row_str.append(f"{val:>4.2f}" if val != 0.0 else "   .")
             lines.append(" ".join(row_str))
         return "\n".join(lines)
 

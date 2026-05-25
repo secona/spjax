@@ -8,6 +8,10 @@ def main() -> None:
     b = SparseTensor.from_file("./matrix/Hamrle1.mtx")
     print(jax.jit(sparse_add).lower(a, b).as_text())
 
+    c = sparse_add(a, b)
+    c = SparseTensor.from_dense(c)
+    print(c.to_dense_str())
+
 
 if __name__ == "__main__":
     main()
