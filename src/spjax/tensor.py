@@ -4,25 +4,6 @@ import jax.numpy as jnp
 from spjax import encoding
 
 
-class TensorSpec:
-    """Static metadata describing a sparse tensor's shape and level formats.
-
-    Used at trace time by the JIT compiler to build merge lattices and
-    emit the correct iteration loops.
-    """
-
-    def __init__(self, shape: tuple[int, ...], lvls: list[encoding.LevelType]) -> None:
-        self.shape = shape
-        self.lvls = lvls
-
-    def __repr__(self) -> str:
-        fmts = [lvl.fmt.name for lvl in self.lvls]
-        return f"TensorSpec(shape={self.shape}, lvls={fmts})"
-
-    def level_names(self) -> tuple[str, ...]:
-        return tuple(lvl.fmt.name for lvl in self.lvls)
-
-
 @jax.tree_util.register_pytree_node_class
 class SparseTensor:
     values: jax.Array
@@ -38,34 +19,6 @@ class SparseTensor:
         self.values = values
         self.shape = shape
         self.lvls = lvls
-
-    # ------------------------------------------------------------------
-    # Flatten / unflatten for JAX primitive binding
-    # ------------------------------------------------------------------
-
-    def spec(self) -> TensorSpec:
-        return TensorSpec(self.shape, self.lvls)
-
-    def to_flat_arrays(self):
-        """Return (values, pos, crd, spec) where pos/crd are concrete arrays."""
-        # Flatten level arrays into pos and crd buffers.
-        # For now, handle 2D tensors: level 0 (row), level 1 (col).
-        pos_list = []
-        crd_list = []
-        for lvl in self.lvls:
-            if hasattr(lvl, "pos") and lvl.pos is not None:
-                pos_list.append(lvl.pos)
-            if hasattr(lvl, "crd") and lvl.crd is not None:
-                crd_list.append(lvl.crd)
-        pos = jnp.concatenate(pos_list) if pos_list else jnp.array([0])
-        crd = jnp.concatenate(crd_list) if crd_list else jnp.array([])
-        return self.values, pos, crd, self.spec()
-
-    @staticmethod
-    def from_flat_arrays(values, pos, crd, spec):
-        """Reconstruct from flat arrays and spec (not yet fully implemented)."""
-        # For now, just return a stub; this is only needed for sparse output.
-        return SparseTensor(values, spec.shape, spec.lvls)
 
     # ------------------------------------------------------------------
     # Constructors
@@ -109,7 +62,11 @@ class SparseTensor:
         coo = scipy.sparse.coo_matrix(arr)
         return cls._from_coo(coo, shape=arr.shape)
 
-    def to_dense_str(self) -> str:
+    # ---------------------------------------------------------------------------
+    # String representation
+    # ---------------------------------------------------------------------------
+
+    def __repr__(self) -> str:
         """Pretty-print a 2D tensor as a dense grid (for debugging)."""
         if len(self.shape) != 2:
             raise ValueError("to_dense_str only supports 2D tensors")

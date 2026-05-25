@@ -10,7 +10,7 @@ def main() -> None:
 
     c = sparse_add(a, b)
     c = SparseTensor.from_dense(c)
-    print(c.to_dense_str())
+    print(c)
 
 
 if __name__ == "__main__":
