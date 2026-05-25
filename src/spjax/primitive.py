@@ -1,136 +1,80 @@
+from functools import partial
+
 import jax
 import jax.numpy as jnp
-from jax._src.core import Primitive, ShapedArray
-from jax.interpreters import mlir
+from jax import lax
 
 from .tensor import SparseTensor
-
-# ------------------------------------------------------------------------------
-# sparse_dot
-# ------------------------------------------------------------------------------
-
-sparse_dot_p = Primitive("sparse_dot")
-
-
-@sparse_dot_p.def_abstract_eval
-def sparse_dot_abstract_eval(values, pos, crd, dense_vec, *, shape):
-    del pos, crd, dense_vec
-    return ShapedArray((shape[0],), values.dtype)
-
-
-def sparse_dot_impl(values, pos, crd, dense_vec, *, shape):
-    del pos
-    out = jnp.zeros(shape[0], dtype=values.dtype)
-    out = out.at[crd[0]].add(values * dense_vec[crd[1]])
-    return out
-
-
-mlir.register_lowering(
-    sparse_dot_p, mlir.lower_fun(sparse_dot_impl, multiple_results=False)
-)
-
-
-def _spmm(X: SparseTensor, Y: SparseTensor) -> jax.Array:
-    M, K = X.shape
-    K2, N = Y.shape
-    assert K == K2
-
-    valid = X.crd[1][:, None] == Y.crd[0][None, :]
-    vals = X.values[:, None] * Y.values[None, :]
-    vals = jnp.where(valid, vals, 0)
-
-    rows = X.crd[0][:, None]
-    cols = Y.crd[1][None, :]
-
-    out = jnp.zeros((M, N), dtype=X.values.dtype)
-    return out.at[rows, cols].add(vals)
-
-
-def sparse_dot(X: SparseTensor, y: SparseTensor | jax.Array) -> jax.Array:
-    if isinstance(y, SparseTensor):
-        return _spmm(X, y)
-    return sparse_dot_p.bind(X.values, X.pos, X.crd, y, shape=X.shape)
 
 
 # ------------------------------------------------------------------------------
 # sparse_add
 # ------------------------------------------------------------------------------
 
-sparse_add_p = Primitive("sparse_add")
-sparse_add_p.multiple_results = True
 
+def sparse_add(a: SparseTensor, b: SparseTensor) -> jax.Array:
+    a_vals = a.values
+    a_row = a.lvls[0].crd
+    a_col = a.lvls[1].crd
 
-@sparse_add_p.def_abstract_eval
-def sparse_add_abstract_eval(v1, c1, v2, c2, *, shape):
-    del shape, c2
-    out_nnz = v1.shape[0] + v2.shape[0]
-    return (
-        ShapedArray((out_nnz,), v1.dtype),
-        ShapedArray((2,), c1.dtype),
-        ShapedArray((2, out_nnz), c1.dtype),
+    b_vals = b.values
+    b_row = b.lvls[0].crd
+    b_col = b.lvls[1].crd
+
+    return _sparse_add_jit(
+        a_vals,
+        a_row,
+        a_col,
+        b_vals,
+        b_row,
+        b_col,
+        shape=a.shape,
     )
 
 
-def sparse_add_impl(v1, c1, v2, c2, *, shape):
-    del shape
-    new_values = jnp.concatenate([v1, v2])
-    new_crd = jnp.concatenate([c1, c2], axis=1)
-    new_nnz = new_values.shape[0]
-    new_pos = jnp.array([0, new_nnz])
-    return (new_values, new_pos, new_crd)
+@partial(jax.jit, static_argnames=("shape",))
+def _sparse_add_jit(
+    a_vals,
+    a_row,
+    a_col,
+    b_vals,
+    b_row,
+    b_col,
+    *,
+    shape,
+):
+    out = jnp.zeros(shape, dtype=a_vals.dtype)
 
+    def scatter_a(i, acc):
+        r = a_row[i]
+        c = a_col[i]
+        return acc.at[r, c].add(a_vals[i])
 
-def sparse_add(a: SparseTensor, b: SparseTensor) -> SparseTensor:
-    values, pos, crd = sparse_add_p.bind(
-        a.values, a.crd, b.values, b.crd, shape=a.shape
-    )
-    nnz = values.shape[0]
-    return SparseTensor(nnz, values, pos, crd, a.shape, a.lvls)
+    def scatter_b(i, acc):
+        r = b_row[i]
+        c = b_col[i]
+        return acc.at[r, c].add(b_vals[i])
 
+    out = lax.fori_loop(0, a_vals.shape[0], scatter_a, out)
+    out = lax.fori_loop(0, b_vals.shape[0], scatter_b, out)
+    return out
 
-mlir.register_lowering(
-    sparse_add_p, mlir.lower_fun(sparse_add_impl, multiple_results=True)
-)
 
 # ------------------------------------------------------------------------------
-# sparse_mul
+# sparse_mul  (placeholder)
 # ------------------------------------------------------------------------------
 
-sparse_mul_p = Primitive("sparse_mul")
-sparse_mul_p.multiple_results = True
+
+def sparse_mul(a: SparseTensor, b: SparseTensor) -> jax.Array:
+    del a, b
+    raise NotImplementedError("sparse_mul not yet implemented")
 
 
-@sparse_mul_p.def_abstract_eval
-def sparse_mul_abstract_eval(v1, c1, v2, c2):
-    del c2
-    out_nnz = min(v1.shape[0], v2.shape[0])
-    return (
-        ShapedArray((out_nnz,), v1.dtype),
-        ShapedArray((2,), c1.dtype),
-        ShapedArray((2, out_nnz), c1.dtype),
-    )
+# ------------------------------------------------------------------------------
+# sparse_dot  (placeholder)
+# ------------------------------------------------------------------------------
 
 
-def sparse_mul_impl(v1, c1, v2, c2):
-    max_nnz = min(v1.shape[0], v2.shape[0])
-    match = (c1[:, :, None] == c2[:, None, :]).all(axis=0)
-    self_idx, other_idx = jnp.where(match, size=max_nnz, fill_value=0)
-
-    num_matches = jnp.count_nonzero(match)
-    mask = jnp.arange(max_nnz) < num_matches
-
-    new_values = jnp.where(mask, v1[self_idx] * v2[other_idx], 0)
-    new_crd = jnp.where(mask[None, :], c1[:, self_idx], 0)
-    new_pos = jnp.array([0, max_nnz])
-
-    return (new_values, new_pos, new_crd)
-
-
-def sparse_mul(a: SparseTensor, b: SparseTensor) -> SparseTensor:
-    v, p, c = sparse_mul_p.bind(a.values, a.crd, b.values, b.crd)
-    return SparseTensor(v.shape[0], v, p, c, a.shape, a.lvls)
-
-
-mlir.register_lowering(
-    sparse_mul_p, mlir.lower_fun(sparse_mul_impl, multiple_results=True)
-)
+def sparse_dot(a: SparseTensor, x: jax.Array) -> jax.Array:
+    del a, x
+    raise NotImplementedError("sparse_dot not yet implemented")

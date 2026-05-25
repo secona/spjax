@@ -2,6 +2,7 @@ from enum import Enum, auto
 from abc import ABC, abstractmethod
 
 import jax
+import jax.numpy as jnp
 
 
 class LevelFormat(Enum):
@@ -196,14 +197,14 @@ class CompressedLevel(LevelType):
         self.is_branchless = False
         self.is_compact = True
 
-    def pos_bounds(self, p_k_minus_1) -> tuple[int, int]:
-        p_begin = int(self.pos[p_k_minus_1])
-        p_end = int(self.pos[p_k_minus_1 + 1])
+    def pos_bounds(self, p_k_minus_1) -> tuple[jax.Array, jax.Array]:
+        p_begin = self.pos[p_k_minus_1]
+        p_end = self.pos[p_k_minus_1 + 1]
         return p_begin, p_end
 
-    def pos_access(self, p_k) -> tuple[int, bool]:
-        i_k = int(self.crd[p_k])
-        return i_k, True
+    def pos_access(self, p_k) -> tuple[jax.Array, jax.Array]:
+        i_k = self.crd[p_k]
+        return i_k, jnp.asarray(True)
 
     def coord_bounds(self, p_k_minus_1) -> tuple[int, int]:
         del p_k_minus_1
@@ -285,9 +286,9 @@ class SingletonLevel(LevelType):
     def pos_bounds(self, p_k_minus_1) -> tuple[int, int]:
         return p_k_minus_1, p_k_minus_1 + 1
 
-    def pos_access(self, p_k) -> tuple[int, bool]:
-        i_k = int(self.crd[p_k])
-        return i_k, True
+    def pos_access(self, p_k) -> tuple[jax.Array, jax.Array]:
+        i_k = self.crd[p_k]
+        return i_k, jnp.asarray(True)
 
     def coord_bounds(self, p_k_minus_1) -> tuple[int, int]:
         del p_k_minus_1

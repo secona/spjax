@@ -4,6 +4,25 @@ import jax.numpy as jnp
 from spjax import encoding
 
 
+class TensorSpec:
+    """Static metadata describing a sparse tensor's shape and level formats.
+
+    Used at trace time by the JIT compiler to build merge lattices and
+    emit the correct iteration loops.
+    """
+
+    def __init__(self, shape: tuple[int, ...], lvls: list[encoding.LevelType]) -> None:
+        self.shape = shape
+        self.lvls = lvls
+
+    def __repr__(self) -> str:
+        fmts = [lvl.fmt.name for lvl in self.lvls]
+        return f"TensorSpec(shape={self.shape}, lvls={fmts})"
+
+    def level_names(self) -> tuple[str, ...]:
+        return tuple(lvl.fmt.name for lvl in self.lvls)
+
+
 @jax.tree_util.register_pytree_node_class
 class SparseTensor:
     values: jax.Array
@@ -20,25 +39,44 @@ class SparseTensor:
         self.shape = shape
         self.lvls = lvls
 
-    def __add__(self, other) -> "SparseTensor":
-        from .primitive import sparse_add
+    # ------------------------------------------------------------------
+    # Flatten / unflatten for JAX primitive binding
+    # ------------------------------------------------------------------
 
-        return sparse_add(self, other)
+    def spec(self) -> TensorSpec:
+        return TensorSpec(self.shape, self.lvls)
 
-    def __mul__(self, other) -> "SparseTensor":
-        from .primitive import sparse_mul
+    def to_flat_arrays(self):
+        """Return (values, pos, crd, spec) where pos/crd are concrete arrays."""
+        # Flatten level arrays into pos and crd buffers.
+        # For now, handle 2D tensors: level 0 (row), level 1 (col).
+        pos_list = []
+        crd_list = []
+        for lvl in self.lvls:
+            if hasattr(lvl, "pos") and lvl.pos is not None:
+                pos_list.append(lvl.pos)
+            if hasattr(lvl, "crd") and lvl.crd is not None:
+                crd_list.append(lvl.crd)
+        pos = jnp.concatenate(pos_list) if pos_list else jnp.array([0])
+        crd = jnp.concatenate(crd_list) if crd_list else jnp.array([])
+        return self.values, pos, crd, self.spec()
 
-        return sparse_mul(self, other)
+    @staticmethod
+    def from_flat_arrays(values, pos, crd, spec):
+        """Reconstruct from flat arrays and spec (not yet fully implemented)."""
+        # For now, just return a stub; this is only needed for sparse output.
+        return SparseTensor(values, spec.shape, spec.lvls)
 
     # ------------------------------------------------------------------
     # Constructors
     # ------------------------------------------------------------------
 
     @classmethod
-    def _from_coo(cls, m_coo) -> "SparseTensor":
+    def _from_coo(cls, m_coo, shape=None) -> "SparseTensor":
         nnz = m_coo.nnz
         values = jnp.asarray(m_coo.data)
-        shape = (int(m_coo.row.max()) + 1, int(m_coo.col.max()) + 1)
+        if shape is None:
+            shape = (int(m_coo.row.max()) + 1, int(m_coo.col.max()) + 1)
 
         compressed_lvl = encoding.CompressedLevel(
             pos=jnp.array([0, nnz]),
@@ -69,7 +107,7 @@ class SparseTensor:
             raise ImportError("Failed to import SciPy for reading sparse tensor")
 
         coo = scipy.sparse.coo_matrix(arr)
-        return cls._from_coo(coo)
+        return cls._from_coo(coo, shape=arr.shape)
 
     def to_dense_str(self) -> str:
         """Pretty-print a 2D tensor as a dense grid (for debugging)."""
@@ -80,8 +118,6 @@ class SparseTensor:
         rows: list[int] = []
         cols: list[int] = []
 
-        # Walk the level hierarchy to extract coordinates.
-        # COO-like: level 0 = compressed (row), level 1 = singleton (col)
         lvl0 = self.lvls[0]
         lvl1 = self.lvls[1]
 
