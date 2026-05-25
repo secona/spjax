@@ -2,7 +2,6 @@ from enum import Enum, auto
 from abc import ABC, abstractmethod
 
 import jax
-import jax.numpy as jnp
 
 
 class LevelFormat(Enum):
@@ -57,10 +56,10 @@ class LevelType(ABC):
     # --------------------------------------------------------------------------
 
     @abstractmethod
-    def pos_bounds(self, p_k_minus_1) -> tuple[int, int]: ...
+    def pos_bounds(self, p_k_minus_1) -> tuple[jax.Array, jax.Array]: ...
 
     @abstractmethod
-    def pos_access(self, p_k) -> tuple[int, bool]: ...
+    def pos_access(self, p_k) -> tuple[jax.Array, bool]: ...
 
     @abstractmethod
     def coord_bounds(self, p_k_minus_1) -> tuple[int, int]: ...
@@ -110,11 +109,11 @@ class DenseLevel(LevelType):
         self.is_branchless = False
         self.is_compact = True
 
-    def pos_bounds(self, p_k_minus_1) -> tuple[int, int]:
+    def pos_bounds(self, p_k_minus_1) -> tuple[jax.Array, jax.Array]:
         del p_k_minus_1
         raise NotImplementedError("Dense level does not support pos_bounds")
 
-    def pos_access(self, p_k) -> tuple[int, bool]:
+    def pos_access(self, p_k) -> tuple[jax.Array, bool]:
         del p_k
         raise NotImplementedError("Dense level does not support pos_access")
 
@@ -202,9 +201,9 @@ class CompressedLevel(LevelType):
         p_end = self.pos[p_k_minus_1 + 1]
         return p_begin, p_end
 
-    def pos_access(self, p_k) -> tuple[jax.Array, jax.Array]:
+    def pos_access(self, p_k) -> tuple[jax.Array, bool]:
         i_k = self.crd[p_k]
-        return i_k, jnp.asarray(True)
+        return i_k, True
 
     def coord_bounds(self, p_k_minus_1) -> tuple[int, int]:
         del p_k_minus_1
@@ -283,12 +282,12 @@ class SingletonLevel(LevelType):
         self.is_branchless = True
         self.is_compact = True
 
-    def pos_bounds(self, p_k_minus_1) -> tuple[int, int]:
+    def pos_bounds(self, p_k_minus_1) -> tuple[jax.Array, jax.Array]:
         return p_k_minus_1, p_k_minus_1 + 1
 
-    def pos_access(self, p_k) -> tuple[jax.Array, jax.Array]:
+    def pos_access(self, p_k) -> tuple[jax.Array, bool]:
         i_k = self.crd[p_k]
-        return i_k, jnp.asarray(True)
+        return i_k, True
 
     def coord_bounds(self, p_k_minus_1) -> tuple[int, int]:
         del p_k_minus_1
