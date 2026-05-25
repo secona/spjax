@@ -121,11 +121,9 @@ class DenseLevel(LevelType):
         del p_k_minus_1
         return 0, self.size
 
-    def coord_access(self, p_k_minus_1, i_k) -> tuple[int, bool]:
+    def coord_access(self, p_k_minus_1, i_k) -> tuple[jax.Array, jax.Array]:
         del p_k_minus_1
-        if 0 <= i_k < self.size:
-            return i_k, True
-        return 0, False
+        return i_k, (0 <= i_k) & (i_k < self.size)
 
     def locate(self, p_k_minus_1, i_k) -> tuple[int, bool]:
         del p_k_minus_1

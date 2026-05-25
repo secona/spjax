@@ -43,14 +43,34 @@ class SparseTensor:
         return cls(values, shape, lvls)
 
     @classmethod
-    def from_file(cls, filename) -> "SparseTensor":
+    def _from_csr(cls, m_csr, shape=None) -> "SparseTensor":
+        indptr = jnp.asarray(m_csr.indptr)
+        indices = jnp.asarray(m_csr.indices)
+        values = jnp.asarray(m_csr.data)
+        if shape is None:
+            shape = (m_csr.shape[0], m_csr.shape[1])
+
+        dense_lvl = encoding.DenseLevel(shape[0])
+        compressed_lvl = encoding.CompressedLevel(pos=indptr, crd=indices)
+
+        lvls = [dense_lvl, compressed_lvl]
+        return cls(values, shape, lvls)
+
+    @classmethod
+    def from_file(cls, filename, fmt="coo") -> "SparseTensor":
         try:
             import scipy
         except ImportError:
             raise ImportError("Failed to import SciPy for reading sparse tensor")
 
         m_coo = scipy.io.mmread(filename)
-        return cls._from_coo(m_coo)
+        if fmt == "coo":
+            return cls._from_coo(m_coo)
+        elif fmt == "csr":
+            m_csr = m_coo.tocsr()
+            return cls._from_csr(m_csr, shape=m_coo.shape)
+        else:
+            raise ValueError(f"Unsupported format: {fmt}")
 
     @classmethod
     def from_dense(cls, arr) -> "SparseTensor":
@@ -78,18 +98,25 @@ class SparseTensor:
         lvl0 = self.lvls[0]
         lvl1 = self.lvls[1]
 
-        if not hasattr(lvl0, "crd") or not hasattr(lvl1, "crd"):
-            raise ValueError("to_dense_str requires level types with 'crd' attributes")
-
-        for p in range(len(lvl0.crd)):
-            rows.append(int(lvl0.crd[p]))
-            cols.append(int(lvl1.crd[p]))
-
         vals = self.values.tolist()
         sparse_map: dict[tuple[int, int], float] = {}
-        for r, c, v in zip(rows, cols, vals):
-            coords = (int(r), int(c))
-            sparse_map[coords] = sparse_map.get(coords, 0.0) + v
+
+        if isinstance(lvl0, encoding.DenseLevel):
+            for i in range(num_rows):
+                p_begin = int(lvl1.pos[i])
+                p_end = int(lvl1.pos[i + 1])
+                for p in range(p_begin, p_end):
+                    sparse_map[(i, int(lvl1.crd[p]))] = (
+                        sparse_map.get((i, int(lvl1.crd[p])), 0.0) + vals[p]
+                    )
+        elif hasattr(lvl0, "crd"):
+            for p in range(len(lvl0.crd)):
+                rows.append(int(lvl0.crd[p]))
+                cols.append(int(lvl1.crd[p]))
+            for r, c, v in zip(rows, cols, vals):
+                sparse_map[(r, c)] = sparse_map.get((r, c), 0.0) + v
+        else:
+            raise ValueError("Unsupported level 0 format")
 
         lines = []
         for r in range(num_rows):
