@@ -1,10 +1,10 @@
 import jax
 import jax.numpy as jnp
-from jax.tree_util import register_pytree_node
 
 from spjax import encoding
 
 
+@jax.tree_util.register_pytree_node_class
 class SparseTensor:
     values: jax.Array
     shape: tuple[int, ...]
@@ -107,22 +107,17 @@ class SparseTensor:
             lines.append(" ".join(row_str))
         return "\n".join(lines)
 
+    # ---------------------------------------------------------------------------
+    # PyTree
+    # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# PyTree
-# ---------------------------------------------------------------------------
+    def tree_flatten(self):
+        children = (self.values, self.lvls)
+        aux_data = (self.shape,)
+        return children, aux_data
 
-
-def sparse_tensor_flatten(obj: SparseTensor):
-    children = (obj.values, obj.lvls)
-    aux_data = (obj.shape,)
-    return children, aux_data
-
-
-def sparse_tensor_unflatten(aux_data, children):
-    values, lvls = children
-    (shape,) = aux_data
-    return SparseTensor(values, shape, lvls)
-
-
-register_pytree_node(SparseTensor, sparse_tensor_flatten, sparse_tensor_unflatten)
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        values, lvls = children
+        (shape,) = aux_data
+        return cls(values, shape, lvls)
