@@ -1,0 +1,98 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Optional
+
+from spjax.encoding import LevelFormat
+
+
+@dataclass(frozen=True)
+class IndexVar:
+    name: str
+
+
+@dataclass
+class Dimension:
+    name: str
+    iv: IndexVar
+    lf: LevelFormat
+
+
+@dataclass
+class TensorAccess:
+    name: str
+    dims: list[Dimension]
+
+
+class OpKind(Enum):
+    ADD = "+"
+    MUL = "*"
+
+
+@dataclass
+class Expression:
+    op: Optional[OpKind] = None
+    left: Optional[Expression] = None
+    right: Optional[Expression] = None
+    access: Optional[TensorAccess] = None
+
+    @staticmethod
+    def leaf(access: TensorAccess) -> Expression:
+        return Expression(access=access)
+
+    @staticmethod
+    def add(left: Expression, right: Expression) -> Expression:
+        return Expression(left=left, right=right, op=OpKind.ADD)
+
+    @staticmethod
+    def mul(left: Expression, right: Expression) -> Expression:
+        return Expression(left=left, right=right, op=OpKind.MUL)
+
+
+class IterationGraph:
+    def __init__(
+        self, ivs: list[IndexVar], reduction: Optional[set[IndexVar]] = None
+    ) -> None:
+        self.ivs = ivs
+        self.reduction = reduction
+
+
+class OutputTensor:
+    def __init__(self, name: str, dims: list[Dimension]) -> None:
+        self.name = name
+        self.dims = dims
+
+
+class CodeGen:
+    def __init__(
+        self, expr: Expression, iter_graph: IterationGraph, out: OutputTensor
+    ) -> None:
+        self.expr = expr
+        self.iter_graph = iter_graph
+        self.out = out
+
+    def generate(self):
+        return
+
+
+def __example():
+    i, j, k = IndexVar("i"), IndexVar("j"), IndexVar("k")
+
+    A_i = Dimension("A", i, LevelFormat.COMPRESSED)
+    A_k = Dimension("A", k, LevelFormat.SINGLETON)
+    B_k = Dimension("B", k, LevelFormat.COMPRESSED)
+    B_j = Dimension("B", j, LevelFormat.DENSE)
+    C_i = Dimension("B", i, LevelFormat.DENSE)
+    C_j = Dimension("B", j, LevelFormat.DENSE)
+
+    expr = Expression.mul(
+        Expression.leaf(TensorAccess("A", [A_i, A_k])),
+        Expression.leaf(TensorAccess("B", [B_k, B_j])),
+    )
+
+    cg = CodeGen(
+        expr, IterationGraph([i, k, j], reduction={k}), OutputTensor("C", [C_i, C_j])
+    )
+    cg.generate()
+del __example
