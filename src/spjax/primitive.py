@@ -99,16 +99,6 @@ def sparse_add(a: SparseTensor, b: SparseTensor) -> jax.Array:
 
 
 # ------------------------------------------------------------------------------
-# sparse_mul  (placeholder)
-# ------------------------------------------------------------------------------
-
-
-def sparse_mul(a: SparseTensor, b: SparseTensor) -> jax.Array:
-    del a, b
-    raise NotImplementedError("sparse_mul not yet implemented")
-
-
-# ------------------------------------------------------------------------------
 # sparse_dot
 # ------------------------------------------------------------------------------
 
