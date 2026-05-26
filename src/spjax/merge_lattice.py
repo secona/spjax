@@ -49,6 +49,10 @@ class Expression:
     def mul(left: Expression, right: Expression) -> Expression:
         return Expression(left=left, right=right, op=OpKind.MUL)
 
+    @property
+    def is_leaf(self):
+        return self.access is not None
+
 
 class IterationGraph:
     def __init__(
@@ -91,6 +95,16 @@ class MergeLattice:
         self.expr = expr
         self.iv = iv
         self.points: list[LatticePoint] = []
+
+    def __coiter_and_locate(self, expr: Expression, iv: IndexVar):
+        if expr.is_leaf:
+            dims = [d for d in expr.access.dims if d.iv == iv]
+            # HACK: supposed to be supports_locate
+            coiter = [d for d in dims if not d == LevelFormat.DENSE]
+            locate = [d for d in dims if d == LevelFormat.DENSE]
+            return coiter, locate
+
+        return
 
 
 def __example():
