@@ -73,7 +73,24 @@ class CodeGen:
         self.out = out
 
     def generate(self):
-        return
+        for iv in self.iter_graph.ivs:
+            self.__codegen(self.expr, iv)
+
+    def __codegen(self, expr, iv: IndexVar):
+        lattice = MergeLattice(expr, iv)
+        del lattice
+
+
+class LatticePoint:
+    def __init__(self, expr: Expression) -> None:
+        self.expr = expr
+
+
+class MergeLattice:
+    def __init__(self, expr: Expression, iv: IndexVar) -> None:
+        self.expr = expr
+        self.iv = iv
+        self.points: list[LatticePoint] = []
 
 
 def __example():
@@ -95,4 +112,6 @@ def __example():
         expr, IterationGraph([i, k, j], reduction={k}), OutputTensor("C", [C_i, C_j])
     )
     cg.generate()
+
+
 del __example
