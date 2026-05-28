@@ -4,7 +4,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from spjax.encoding import LevelFormat
+from spjax.levels import (
+    CompressedSpec,
+    DenseSpec,
+    IterationKind,
+    LevelSpec,
+    SingletonSpec,
+)
 
 
 @dataclass(frozen=True)
@@ -16,7 +22,7 @@ class IndexVar:
 class Dimension:
     name: str
     iv: IndexVar
-    lf: LevelFormat
+    spec: LevelSpec
 
 
 @dataclass
@@ -99,9 +105,8 @@ class MergeLattice:
     def __coiter_and_locate(self, expr: Expression, iv: IndexVar):
         if expr.is_leaf:
             dims = [d for d in expr.access.dims if d.iv == iv]
-            # HACK: supposed to be supports_locate
-            coiter = [d for d in dims if not d == LevelFormat.DENSE]
-            locate = [d for d in dims if d == LevelFormat.DENSE]
+            coiter = [d for d in dims if d.spec.supports(IterationKind.POSITION)]
+            locate = [d for d in dims if d.spec.supports(IterationKind.LOCATE)]
             return coiter, locate
 
         return
@@ -110,12 +115,12 @@ class MergeLattice:
 def __example():
     i, j, k = IndexVar("i"), IndexVar("j"), IndexVar("k")
 
-    A_i = Dimension("A", i, LevelFormat.COMPRESSED)
-    A_k = Dimension("A", k, LevelFormat.SINGLETON)
-    B_k = Dimension("B", k, LevelFormat.COMPRESSED)
-    B_j = Dimension("B", j, LevelFormat.DENSE)
-    C_i = Dimension("B", i, LevelFormat.DENSE)
-    C_j = Dimension("B", j, LevelFormat.DENSE)
+    A_i = Dimension("A", i, CompressedSpec())
+    A_k = Dimension("A", k, SingletonSpec())
+    B_k = Dimension("B", k, CompressedSpec())
+    B_j = Dimension("B", j, DenseSpec(10))
+    C_i = Dimension("C", i, DenseSpec(10))
+    C_j = Dimension("C", j, DenseSpec(10))
 
     expr = Expression.mul(
         Expression.leaf(TensorAccess("A", [A_i, A_k])),

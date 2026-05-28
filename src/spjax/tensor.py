@@ -2,20 +2,29 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
-from spjax import encoding
+from spjax.levels import (
+    CompressedSpec,
+    CompressedStorage,
+    DenseSpec,
+    DenseStorage,
+    IteratorFactory,
+    SingletonSpec,
+    SingletonStorage,
+    SparseLevel,
+)
 
 
 @jax.tree_util.register_pytree_node_class
 class SparseTensor:
     values: jax.Array
     shape: tuple[int, ...]
-    lvls: list[encoding.LevelType]
+    lvls: list[SparseLevel]
 
     def __init__(
         self,
         values: jax.Array,
         shape: tuple[int, ...],
-        lvls: list[encoding.LevelType],
+        lvls: list[SparseLevel],
     ) -> None:
         self.values = values
         self.shape = shape
@@ -32,13 +41,15 @@ class SparseTensor:
         if shape is None:
             shape = (int(m_coo.row.max()) + 1, int(m_coo.col.max()) + 1)
 
-        compressed_lvl = encoding.CompressedLevel(
-            pos=jnp.array([0, nnz]),
-            crd=jnp.asarray(m_coo.row),
+        compressed_lvl = SparseLevel(
+            CompressedSpec(is_unique=False),
+            CompressedStorage(pos=jnp.array([0, nnz]), crd=jnp.asarray(m_coo.row)),
         )
-        compressed_lvl.is_unique = False  # COO rows may repeat
 
-        singleton_lvl = encoding.SingletonLevel(crd=jnp.asarray(m_coo.col))
+        singleton_lvl = SparseLevel(
+            SingletonSpec(),
+            SingletonStorage(crd=jnp.asarray(m_coo.col)),
+        )
 
         lvls = [compressed_lvl, singleton_lvl]
         return cls(values, shape, lvls)
@@ -51,8 +62,11 @@ class SparseTensor:
         if shape is None:
             shape = (m_csr.shape[0], m_csr.shape[1])
 
-        dense_lvl = encoding.DenseLevel(shape[0])
-        compressed_lvl = encoding.CompressedLevel(pos=indptr, crd=indices)
+        dense_lvl = SparseLevel(DenseSpec(shape[0]), DenseStorage(shape[0]))
+        compressed_lvl = SparseLevel(
+            CompressedSpec(),
+            CompressedStorage(pos=indptr, crd=indices),
+        )
 
         lvls = [dense_lvl, compressed_lvl]
         return cls(values, shape, lvls)
@@ -93,31 +107,25 @@ class SparseTensor:
             raise ValueError("to_dense_str only supports 2D tensors")
 
         num_rows, num_cols = self.shape
-        rows: list[int] = []
-        cols: list[int] = []
-
         lvl0 = self.lvls[0]
         lvl1 = self.lvls[1]
 
         vals = self.values.tolist()
         sparse_map: dict[tuple[int, int], float] = {}
 
-        if isinstance(lvl0, encoding.DenseLevel):
-            for i in range(num_rows):
-                p_begin = int(lvl1.pos[i])
-                p_end = int(lvl1.pos[i + 1])
-                for p in range(p_begin, p_end):
-                    sparse_map[(i, int(lvl1.crd[p]))] = (
-                        sparse_map.get((i, int(lvl1.crd[p])), 0.0) + vals[p]
-                    )
-        elif hasattr(lvl0, "crd"):
-            for p in range(len(lvl0.crd)):
-                rows.append(int(lvl0.crd[p]))
-                cols.append(int(lvl1.crd[p]))
-            for r, c, v in zip(rows, cols, vals):
-                sparse_map[(r, c)] = sparse_map.get((r, c), 0.0) + v
-        else:
-            raise ValueError("Unsupported level 0 format")
+        it0 = IteratorFactory.make_root_iterator(lvl0)
+        while it0.valid():
+            coord0 = it0.coord()
+            p0 = it0.pos()
+            it1 = IteratorFactory.make_iterator(lvl1.spec, lvl1.storage, parent_pos=p0)
+            while it1.valid():
+                coord1 = it1.coord()
+                vi = it1.pos()
+                sparse_map[(coord0, coord1)] = (
+                    sparse_map.get((coord0, coord1), 0.0) + vals[vi]
+                )
+                it1.next()
+            it0.next()
 
         lines = []
         for r in range(num_rows):
@@ -157,9 +165,9 @@ class SparseTensor:
             )
 
         for i, (la, lb) in enumerate(zip(self.lvls, other.lvls)):
-            if type(la) != type(lb):
+            if type(la.spec) is not type(lb.spec):
                 raise ValueError(
-                    f"Level {i} format mismatch: {type(la).__name__} vs {type(lb).__name__}"
+                    f"Level {i} format mismatch: {type(la.spec).__name__} vs {type(lb.spec).__name__}"
                 )
 
         out = jnp.zeros(self.shape, dtype=self.values.dtype)
@@ -193,31 +201,14 @@ class SparseTensor:
     # ---------------------------------------------------------------------------
 
     def _gather_dot_inner(self, lvl1, vals, parent_pos, coord0, x, out):
-        if lvl1.supports_coord_pos_iter:
-            p1_begin, p1_end = lvl1.pos_bounds(parent_pos)
+        p1_begin, p1_end = lvl1.iter_bounds(parent_pos)
 
-            def inner_body(p1, out):
-                coord1, _ = lvl1.pos_access(p1)
-                return out.at[coord0].add(vals[p1] * x[coord1])
+        def inner_body(p1, out):
+            coord1 = lvl1.iter_coord(p1)
+            vi = lvl1.value_index(parent_pos, p1)
+            return out.at[coord0].add(vals[vi] * x[coord1])
 
-            return lax.fori_loop(p1_begin, p1_end, inner_body, out)
-
-        elif lvl1.supports_coord_value_iter:
-            i1_begin, i1_end = lvl1.coord_bounds(parent_pos)
-
-            def inner_body(i1, out):
-                coord1, _ = lvl1.coord_access(parent_pos, i1)
-                inner_size = i1_end - i1_begin
-                return out.at[coord0].add(
-                    vals[coord0 * inner_size + coord1] * x[coord1]
-                )
-
-            return lax.fori_loop(i1_begin, i1_end, inner_body, out)
-
-        else:
-            raise ValueError(
-                f"Level 1 format {type(lvl1).__name__} does not support iteration"
-            )
+        return lax.fori_loop(p1_begin, p1_end, inner_body, out)
 
     def _gather_dot_tensor(self, x, out):
         lvls = self.lvls
@@ -232,53 +223,23 @@ class SparseTensor:
         lvl0 = lvls[0]
         lvl1 = lvls[1]
 
-        if lvl0.supports_coord_pos_iter:
-            p0_begin, p0_end = lvl0.pos_bounds(0)
+        p0_begin, p0_end = lvl0.iter_bounds(0)
 
-            def outer_body(p0, out):
-                coord0, _ = lvl0.pos_access(p0)
-                return self._gather_dot_inner(lvl1, vals, p0, coord0, x, out)
+        def outer_body(p0, out):
+            coord0 = lvl0.iter_coord(p0)
+            return self._gather_dot_inner(lvl1, vals, p0, coord0, x, out)
 
-            return lax.fori_loop(p0_begin, p0_end, outer_body, out)
-
-        elif lvl0.supports_coord_value_iter:
-            i0_begin, i0_end = lvl0.coord_bounds(0)
-
-            def outer_body(i0, out):
-                coord0, _ = lvl0.coord_access(0, i0)
-                return self._gather_dot_inner(lvl1, vals, coord0, coord0, x, out)
-
-            return lax.fori_loop(i0_begin, i0_end, outer_body, out)
-
-        else:
-            raise ValueError(
-                f"Level 0 format {type(lvl0).__name__} does not support iteration"
-            )
+        return lax.fori_loop(p0_begin, p0_end, outer_body, out)
 
     def _scatter_inner(self, lvl1, vals, parent_pos, coord0, out):
-        if lvl1.supports_coord_pos_iter:
-            p1_begin, p1_end = lvl1.pos_bounds(parent_pos)
+        p1_begin, p1_end = lvl1.iter_bounds(parent_pos)
 
-            def inner_body(p1, out):
-                coord1, _ = lvl1.pos_access(p1)
-                return out.at[coord0, coord1].add(vals[p1])
+        def inner_body(p1, out):
+            coord1 = lvl1.iter_coord(p1)
+            vi = lvl1.value_index(parent_pos, p1)
+            return out.at[coord0, coord1].add(vals[vi])
 
-            return lax.fori_loop(p1_begin, p1_end, inner_body, out)
-
-        elif lvl1.supports_coord_value_iter:
-            i1_begin, i1_end = lvl1.coord_bounds(parent_pos)
-
-            def inner_body(i1, out):
-                coord1, _ = lvl1.coord_access(parent_pos, i1)
-                inner_size = i1_end - i1_begin
-                return out.at[coord0, coord1].add(vals[coord0 * inner_size + coord1])
-
-            return lax.fori_loop(i1_begin, i1_end, inner_body, out)
-
-        else:
-            raise ValueError(
-                f"Level 1 format {type(lvl1).__name__} does not support iteration"
-            )
+        return lax.fori_loop(p1_begin, p1_end, inner_body, out)
 
     def _scatter_tensor(self, out):
         lvls = self.lvls
@@ -293,25 +254,10 @@ class SparseTensor:
         lvl0 = lvls[0]
         lvl1 = lvls[1]
 
-        if lvl0.supports_coord_pos_iter:
-            p0_begin, p0_end = lvl0.pos_bounds(0)
+        p0_begin, p0_end = lvl0.iter_bounds(0)
 
-            def outer_body(p0, out):
-                coord0, _ = lvl0.pos_access(p0)
-                return self._scatter_inner(lvl1, vals, p0, coord0, out)
+        def outer_body(p0, out):
+            coord0 = lvl0.iter_coord(p0)
+            return self._scatter_inner(lvl1, vals, p0, coord0, out)
 
-            return lax.fori_loop(p0_begin, p0_end, outer_body, out)
-
-        elif lvl0.supports_coord_value_iter:
-            i0_begin, i0_end = lvl0.coord_bounds(0)
-
-            def outer_body(i0, out):
-                coord0, _ = lvl0.coord_access(0, i0)
-                return self._scatter_inner(lvl1, vals, coord0, coord0, out)
-
-            return lax.fori_loop(i0_begin, i0_end, outer_body, out)
-
-        else:
-            raise ValueError(
-                f"Level 0 format {type(lvl0).__name__} does not support iteration"
-            )
+        return lax.fori_loop(p0_begin, p0_end, outer_body, out)

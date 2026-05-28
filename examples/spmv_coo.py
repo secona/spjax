@@ -15,6 +15,8 @@ def main() -> None:
     print(c)
     print(spmv.lower(a, b).as_text())
 
+    print(a)
+
 
 if __name__ == "__main__":
     main()
