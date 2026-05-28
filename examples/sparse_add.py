@@ -1,14 +1,13 @@
 import jax
 from spjax import SparseTensor
-from spjax.primitive import sparse_add
 
 
 def main() -> None:
     a = SparseTensor.from_file("./matrix/ibm32.mtx")
     b = SparseTensor.from_file("./matrix/Hamrle1.mtx")
-    print(jax.jit(sparse_add).lower(a, b).as_text())
+    print(jax.jit(lambda a, b: a.add(b)).lower(a, b).as_text())
 
-    c = sparse_add(a, b)
+    c = a.add(b)
     c = SparseTensor.from_dense(c)
     print(c)
 

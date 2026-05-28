@@ -1,10 +1,10 @@
 import jax
-from spjax import SparseTensor, sparse_dot
+from spjax import SparseTensor
 
 
 @jax.jit
 def spmm(X, Y):
-    return sparse_dot(X, Y)
+    return X.dot(Y)
 
 
 def main() -> None:
