@@ -1,3 +1,5 @@
+from itertools import product
+
 import jax
 import jax.numpy as jnp
 from jax import lax
@@ -7,7 +9,6 @@ from spjax.levels import (
     CompressedStorage,
     DenseSpec,
     DenseStorage,
-    IteratorFactory,
     SingletonSpec,
     SingletonStorage,
     SparseLevel,
@@ -101,40 +102,84 @@ class SparseTensor:
     # String representation
     # ---------------------------------------------------------------------------
 
-    def __repr__(self) -> str:
-        """Pretty-print a 2D tensor as a dense grid (for debugging)."""
-        if len(self.shape) != 2:
-            raise ValueError("to_dense_str only supports 2D tensors")
-
-        num_rows, num_cols = self.shape
-        lvl0 = self.lvls[0]
-        lvl1 = self.lvls[1]
-
+    def _collect_entries(self) -> dict[tuple[int, ...], float]:
+        sparse_map: dict[tuple[int, ...], float] = {}
         vals = self.values.tolist()
-        sparse_map: dict[tuple[int, int], float] = {}
 
-        it0 = IteratorFactory.make_root_iterator(lvl0)
-        while it0.valid():
-            coord0 = it0.coord()
-            p0 = it0.pos()
-            it1 = IteratorFactory.make_iterator(lvl1.spec, lvl1.storage, parent_pos=p0)
-            while it1.valid():
-                coord1 = it1.coord()
-                vi = it1.pos()
-                sparse_map[(coord0, coord1)] = (
-                    sparse_map.get((coord0, coord1), 0.0) + vals[vi]
-                )
-                it1.next()
-            it0.next()
+        def walk(level_idx: int, parent_pos: int, coords: tuple[int, ...]):
+            lvl = self.lvls[level_idx]
+            p_begin, p_end = lvl.iter_bounds(parent_pos)
+            for p in range(int(p_begin), int(p_end)):
+                coord = int(lvl.iter_coord(p))
+                vi = lvl.value_index(parent_pos, p)
+                new_coords = coords + (coord,)
+                if level_idx == len(self.lvls) - 1:
+                    key = new_coords
+                    sparse_map[key] = sparse_map.get(key, 0.0) + float(vals[vi])
+                else:
+                    walk(level_idx + 1, p, new_coords)
+
+        root_lvl = self.lvls[0]
+        if isinstance(root_lvl.spec, DenseSpec):
+            p_begin, p_end = 0, root_lvl.spec.size
+        elif isinstance(root_lvl.spec, CompressedSpec):
+            p_begin, p_end = 0, len(root_lvl.storage.crd)
+        elif isinstance(root_lvl.spec, SingletonSpec):
+            p_begin, p_end = 0, len(root_lvl.storage.crd)
+        else:
+            raise TypeError(
+                f"Unsupported root level type: {type(root_lvl.spec).__name__}"
+            )
+
+        for p in range(p_begin, p_end):
+            coord = int(root_lvl.iter_coord(p))
+            vi = root_lvl.value_index(0, p)
+            coords = (coord,)
+            if len(self.lvls) == 1:
+                sparse_map[coords] = sparse_map.get(coords, 0.0) + float(vals[vi])
+            else:
+                walk(1, p, coords)
+
+        return sparse_map
+
+    @staticmethod
+    def _format_row(sparse_map: dict, prefix: tuple[int, ...], size: int) -> str:
+        row_str = []
+        for c in range(size):
+            key = prefix + (c,)
+            val = sparse_map.get(key, 0.0)
+            row_str.append(f"{val:>4.2f}" if val != 0.0 else "   .")
+        return " ".join(row_str)
+
+    @staticmethod
+    def _format_grid(sparse_map: dict, shape: tuple[int, ...]) -> str:
+        if len(shape) == 1:
+            return SparseTensor._format_row(sparse_map, (), shape[0])
+
+        num_rows, num_cols = shape[-2], shape[-1]
+        prefix_shape = shape[:-2]
 
         lines = []
-        for r in range(num_rows):
-            row_str = []
-            for c in range(num_cols):
-                val = float(sparse_map.get((r, c), 0.0))
-                row_str.append(f"{val:>4.2f}" if val != 0.0 else "   .")
-            lines.append(" ".join(row_str))
+        if prefix_shape:
+            for prefix in product(*[range(s) for s in prefix_shape]):
+                header = f"[{', '.join(map(str, prefix))}, :, :]:"
+                lines.append(header)
+                for r in range(num_rows):
+                    row = SparseTensor._format_row(sparse_map, prefix + (r,), num_cols)
+                    lines.append(row)
+        else:
+            for r in range(num_rows):
+                row = SparseTensor._format_row(sparse_map, (r,), num_cols)
+                lines.append(row)
+
         return "\n".join(lines)
+
+    def __repr__(self) -> str:
+        if len(self.shape) == 0:
+            return f"SparseTensor(shape={self.shape})"
+
+        sparse_map = self._collect_entries()
+        return self._format_grid(sparse_map, self.shape)
 
     # ---------------------------------------------------------------------------
     # PyTree
