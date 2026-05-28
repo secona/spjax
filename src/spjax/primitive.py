@@ -4,6 +4,8 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
+from spjax.merge_lattice import Dimension, IndexVar
+
 from .tensor import SparseTensor
 
 
@@ -82,9 +84,7 @@ def sparse_add(a: SparseTensor, b: SparseTensor) -> jax.Array:
         raise ValueError(f"Shape mismatch: {a.shape} vs {b.shape}")
 
     if len(a.lvls) != len(b.lvls):
-        raise ValueError(
-            f"Level count mismatch: {len(a.lvls)} vs {len(b.lvls)}"
-        )
+        raise ValueError(f"Level count mismatch: {len(a.lvls)} vs {len(b.lvls)}")
 
     for i, (la, lb) in enumerate(zip(a.lvls, b.lvls)):
         if type(la) != type(lb):
@@ -174,9 +174,7 @@ def sparse_dot(a: SparseTensor, x: jax.Array) -> jax.Array:
         return sparse_dot(a, x_dense)
 
     if a.shape[1] != x.shape[0]:
-        raise ValueError(
-            f"Shape mismatch for sparse_dot: {a.shape} @ {x.shape}"
-        )
+        raise ValueError(f"Shape mismatch for sparse_dot: {a.shape} @ {x.shape}")
 
     result_shape: tuple[int, ...]
     if x.ndim == 1:
