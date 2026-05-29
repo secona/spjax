@@ -338,32 +338,3 @@ class IteratorFactory:
         if isinstance(level.spec, DenseSpec):
             return IteratorFactory.make_iterator(level.spec, level.storage)
         return IteratorFactory.make_iterator(level.spec, level.storage, parent_pos=0)
-
-
-# ------------------------------------------------------------------------------
-# Merge Planning Structures
-# ------------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class IndexVar:
-    name: str
-
-
-@dataclass
-class IteratorRef:
-    tensor: str
-    iv: IndexVar
-
-    level: SparseLevel
-
-    iteration_kind: IterationKind
-
-
-@dataclass
-class LatticePoint:
-    iterators: list[IteratorRef]
-
-    behavior: MergeBehavior
-
-    expr: object | None = None

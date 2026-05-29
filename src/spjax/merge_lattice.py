@@ -1,136 +1,263 @@
 from __future__ import annotations
 
+from abc import ABC
 from dataclasses import dataclass
-from enum import Enum
-from typing import Optional
+from enum import Enum, auto
 
-from spjax.levels import (
-    CompressedSpec,
-    DenseSpec,
-    IterationKind,
-    LevelSpec,
-    SingletonSpec,
-)
+from spjax.levels import LevelSpec
 
+# ------------------------------------------------------------------------------
+# Index Variables
+# ------------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class IndexVar:
     name: str
 
+    def __repr__(self) -> str:
+        return self.name
+
+# ------------------------------------------------------------------------------
+# Logical Tensor Dimension
+# ------------------------------------------------------------------------------
 
 @dataclass
-class Dimension:
-    name: str
+class TensorDimension:
     iv: IndexVar
-    spec: LevelSpec
 
+    def __repr__(self) -> str:
+        return self.iv.name
+
+# ------------------------------------------------------------------------------
+# Tensor Access
+# ------------------------------------------------------------------------------
+
+# TODO: move this to not here. maybe tensor.py?
+@dataclass(frozen=True)
+class TensorType:
+    shape: tuple[int, ...]
+
+    level_specs: tuple[LevelSpec, ...]
+
+    def order(self) -> int:
+        return len(self.shape)
 
 @dataclass
 class TensorAccess:
     name: str
-    dims: list[Dimension]
+    tensor_type: TensorType
+    ivs: tuple[IndexVar, ...]
+
+    def __repr__(self) -> str:
+        ivs = ", ".join(iv.name for iv in self.ivs)
+        return f"{self.name}({ivs})"
 
 
-class OpKind(Enum):
-    ADD = "+"
-    MUL = "*"
+# ------------------------------------------------------------------------------
+# Expression IR
+# ------------------------------------------------------------------------------
+
+class Expr(ABC):
+    pass
 
 
-@dataclass
-class Expression:
-    op: Optional[OpKind] = None
-    left: Optional[Expression] = None
-    right: Optional[Expression] = None
-    access: Optional[TensorAccess] = None
+@dataclass(frozen=True)
+class AccessExpr(Expr):
+    access: TensorAccess
 
-    @staticmethod
-    def leaf(access: TensorAccess) -> Expression:
-        return Expression(access=access)
-
-    @staticmethod
-    def add(left: Expression, right: Expression) -> Expression:
-        return Expression(left=left, right=right, op=OpKind.ADD)
-
-    @staticmethod
-    def mul(left: Expression, right: Expression) -> Expression:
-        return Expression(left=left, right=right, op=OpKind.MUL)
-
-    @property
-    def is_leaf(self):
-        return self.access is not None
+    def __repr__(self) -> str:
+        return repr(self.access)
 
 
+@dataclass(frozen=True)
+class AddExpr(Expr):
+    left: Expr
+    right: Expr
+
+    def __repr__(self) -> str:
+        return f"({self.left} + {self.right})"
+
+
+@dataclass(frozen=True)
+class MulExpr(Expr):
+    left: Expr
+    right: Expr
+
+    def __repr__(self) -> str:
+        return f"({self.left} * {self.right})"
+
+# ------------------------------------------------------------------------------
+# Iteration Graph
+# ------------------------------------------------------------------------------
+
+class IterationVarKind(Enum):
+    SPATIAL = auto()
+    REDUCTION = auto()
+
+
+@dataclass(frozen=True)
+class IterationVar:
+    iv: IndexVar
+    kind: IterationVarKind
+
+
+@dataclass(frozen=True)
 class IterationGraph:
-    def __init__(
-        self, ivs: list[IndexVar], reduction: Optional[set[IndexVar]] = None
-    ) -> None:
-        self.ivs = ivs
-        self.reduction = reduction
+    vars: tuple[IterationVar, ...]
+
+    def __repr__(self) -> str:
+        return " -> ".join(iv.iv.name for iv in self.vars)
+
+# ------------------------------------------------------------------------------
+# Iterator References
+# ------------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class IteratorRef:
+    tensor: str
+
+    iv: IndexVar
+
+    level: LevelSpec
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.tensor}[{self.iv}]"
+            f"<{self.level.name}>"
+        )
+
+# ------------------------------------------------------------------------------
+# Merge Semantics
+# ------------------------------------------------------------------------------
+
+class MergeKind(Enum):
+    UNION = auto()
+    INTERSECTION = auto()
+    LOCATE = auto()
 
 
-class OutputTensor:
-    def __init__(self, name: str, dims: list[Dimension]) -> None:
-        self.name = name
-        self.dims = dims
-
-
-class CodeGen:
-    def __init__(
-        self, expr: Expression, iter_graph: IterationGraph, out: OutputTensor
-    ) -> None:
-        self.expr = expr
-        self.iter_graph = iter_graph
-        self.out = out
-
-    def generate(self):
-        for iv in self.iter_graph.ivs:
-            self.__codegen(self.expr, iv)
-
-    def __codegen(self, expr, iv: IndexVar):
-        lattice = MergeLattice(expr, iv)
-        del lattice
-
-
+@dataclass(frozen=True)
 class LatticePoint:
-    def __init__(self, expr: Expression) -> None:
-        self.expr = expr
+    iterators: tuple[IteratorRef, ...]
 
+    merge_kind: MergeKind
+
+    expr: Expr
+
+    def __repr__(self) -> str:
+        iters = ", ".join(repr(it) for it in self.iterators)
+
+        return (
+            f"LatticePoint("
+            f"merge={self.merge_kind.name}, "
+            f"iters=[{iters}], "
+            f"expr={self.expr}"
+            f")"
+        )
+
+# ------------------------------------------------------------------------------
+# Merge Lattice
+# ------------------------------------------------------------------------------
 
 class MergeLattice:
-    def __init__(self, expr: Expression, iv: IndexVar) -> None:
+    def __init__(self, expr: Expr, iv: IndexVar) -> None:
         self.expr = expr
         self.iv = iv
         self.points: list[LatticePoint] = []
 
-    def __coiter_and_locate(self, expr: Expression, iv: IndexVar):
-        if expr.is_leaf:
-            dims = [d for d in expr.access.dims if d.iv == iv]
-            coiter = [d for d in dims if d.spec.supports(IterationKind.POSITION)]
-            locate = [d for d in dims if d.spec.supports(IterationKind.LOCATE)]
-            return coiter, locate
+        self._build()
 
-        return
+    def _build(self):
+        expr = self.expr
+
+        if isinstance(expr, AccessExpr):
+            iterator = self._make_iterator(expr.access)
+
+            self.points.append(
+                LatticePoint(
+                    iterators=(iterator,),
+                    merge_kind=MergeKind.UNION,
+                    expr=expr,
+                )
+            )
+
+            return
+
+        if isinstance(expr, AddExpr):
+            left_iters = self._collect_iterators(expr.left)
+            right_iters = self._collect_iterators(expr.right)
+
+            self.points.append(
+                LatticePoint(
+                    iterators=tuple(left_iters + right_iters),
+                    merge_kind=MergeKind.UNION,
+                    expr=expr,
+                )
+            )
+
+            return
+
+        if isinstance(expr, MulExpr):
+            left_iters = self._collect_iterators(expr.left)
+            right_iters = self._collect_iterators(expr.right)
+
+            self.points.append(
+                LatticePoint(
+                    iterators=tuple(left_iters + right_iters),
+                    merge_kind=MergeKind.INTERSECTION,
+                    expr=expr,
+                )
+            )
+
+            return
+
+    def _collect_iterators(self, expr: Expr) -> list[IteratorRef]:
+        if isinstance(expr, AccessExpr):
+            return [self._make_iterator(expr.access)]
+
+        if isinstance(expr, AddExpr):
+            return (
+                self._collect_iterators(expr.left)
+                + self._collect_iterators(expr.right)
+            )
+
+        if isinstance(expr, MulExpr):
+            return (
+                self._collect_iterators(expr.left)
+                + self._collect_iterators(expr.right)
+            )
+
+        return []
 
 
-def __example():
-    i, j, k = IndexVar("i"), IndexVar("j"), IndexVar("k")
+    def _make_iterator(
+        self,
+        access: TensorAccess,
+    ) -> IteratorRef:
+        for iv, level in zip(
+            access.ivs,
+            access.tensor_type.level_specs,
+        ):
+            if iv == self.iv:
+                return IteratorRef(
+                    tensor=access.name,
+                    iv=iv,
+                    level=level,
+                )
 
-    A_i = Dimension("A", i, CompressedSpec())
-    A_k = Dimension("A", k, SingletonSpec())
-    B_k = Dimension("B", k, CompressedSpec())
-    B_j = Dimension("B", j, DenseSpec(10))
-    C_i = Dimension("C", i, DenseSpec(10))
-    C_j = Dimension("C", j, DenseSpec(10))
+        raise RuntimeError(
+            f"Tensor {access.name} "
+            f"does not participate in {self.iv}"
+        )
 
-    expr = Expression.mul(
-        Expression.leaf(TensorAccess("A", [A_i, A_k])),
-        Expression.leaf(TensorAccess("B", [B_k, B_j])),
-    )
+    def __repr__(self) -> str:
+        body = "\n".join(
+            f"  {point}"
+            for point in self.points
+        )
 
-    cg = CodeGen(
-        expr, IterationGraph([i, k, j], reduction={k}), OutputTensor("C", [C_i, C_j])
-    )
-    cg.generate()
-
-
-del __example
+        return (
+            f"MergeLattice(iv={self.iv}) {{\n"
+            f"{body}\n"
+            f"}}"
+        )
