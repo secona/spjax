@@ -3,27 +3,13 @@ from enum import Enum, auto
 
 import jax
 
-# ------------------------------------------------------------------------------
-# Iteration Semantics
-# ------------------------------------------------------------------------------
+from spjax.storage import CompressedStorage, DenseStorage, SingletonStorage
 
 
 class IterationKind(Enum):
     POSITION = auto()
     COORDINATE = auto()
     LOCATE = auto()
-
-
-class MergeBehavior(Enum):
-    UNION = auto()
-    INTERSECTION = auto()
-    LOCATE = auto()
-    DENSE = auto()
-
-
-# ------------------------------------------------------------------------------
-# Level Properties
-# ------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -42,11 +28,6 @@ class LevelProperties:
 
     is_compact: bool
     """no unlabeled padding between coordinates"""
-
-
-# ------------------------------------------------------------------------------
-# Level Specification (Compiler Semantic Layer)
-# ------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -146,43 +127,12 @@ class SingletonSpec(LevelSpec):
         )
 
 
-# ------------------------------------------------------------------------------
-# Runtime Storage Layer
-# ------------------------------------------------------------------------------
-
-
-@dataclass
-class LevelStorage:
-    pass
-
-
-@dataclass
-class DenseStorage(LevelStorage):
-    size: int
-
-
-@dataclass
-class CompressedStorage(LevelStorage):
-    pos: object
-    crd: object
-
-
-@dataclass
-class SingletonStorage(LevelStorage):
-    crd: object
-
-
-# ------------------------------------------------------------------------------
-# Sparse Level
-# ------------------------------------------------------------------------------
-
-
 @jax.tree_util.register_pytree_node_class
 class SparseLevel:
     spec: LevelSpec
-    storage: LevelStorage
+    storage: DenseStorage | CompressedStorage | SingletonStorage
 
-    def __init__(self, spec: LevelSpec, storage: LevelStorage):
+    def __init__(self, spec: LevelSpec, storage: DenseStorage | CompressedStorage | SingletonStorage):
         self.spec = spec
         self.storage = storage
 
@@ -207,134 +157,30 @@ class SparseLevel:
             return parent_pos * self.spec.size + p
         return p
 
-    # --------------------------------------------------------------------------
-    # PyTree
-    # --------------------------------------------------------------------------
-
     def tree_flatten(self):
         if isinstance(self.storage, DenseStorage):
             children = ()
-            aux_data = (self.spec, "dense", self.storage.size)
+            aux_data = (self.spec, self.storage.size)
         elif isinstance(self.storage, CompressedStorage):
             children = (self.storage.pos, self.storage.crd)
-            aux_data = (self.spec, "compressed")
+            aux_data = (self.spec,)
         elif isinstance(self.storage, SingletonStorage):
             children = (self.storage.crd,)
-            aux_data = (self.spec, "singleton")
+            aux_data = (self.spec,)
         else:
             raise TypeError(f"Unknown storage type: {type(self.storage)}")
         return children, aux_data
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        kind = aux_data[1]
-        if kind == "dense":
-            spec, _, size = aux_data
+        spec = aux_data[0]
+        if isinstance(spec, DenseSpec):
+            size = aux_data[1]
             return cls(spec, DenseStorage(size))
-        if kind == "compressed":
-            spec, _ = aux_data
+        if isinstance(spec, CompressedSpec):
             pos, crd = children
             return cls(spec, CompressedStorage(pos, crd))
-        if kind == "singleton":
-            spec, _ = aux_data
+        if isinstance(spec, SingletonSpec):
             (crd,) = children
             return cls(spec, SingletonStorage(crd))
-        raise TypeError(f"Unknown storage kind: {kind}")
-
-
-# ------------------------------------------------------------------------------
-# Sparse Iterators
-# ------------------------------------------------------------------------------
-
-
-class SparseIterator:
-    def valid(self) -> bool: ...
-
-    def coord(self) -> int: ...
-
-    def pos(self) -> int: ...
-
-    def next(self) -> None: ...
-
-    def seek(self, coord: int) -> None: ...
-
-
-class DenseCoordinateIterator(SparseIterator):
-    def __init__(self, size: int):
-        self.i = 0
-        self.size = size
-
-    def valid(self) -> bool:
-        return self.i < self.size
-
-    def coord(self) -> int:
-        return self.i
-
-    def pos(self) -> int:
-        return self.i
-
-    def next(self) -> None:
-        self.i += 1
-
-    def seek(self, coord: int) -> None:
-        self.i = coord
-
-
-class CompressedIterator(SparseIterator):
-    def __init__(self, crd, p_begin: int, p_end: int):
-        self.crd_arr = crd
-        self.p = p_begin
-        self.p_end = p_end
-
-    def valid(self) -> bool:
-        return self.p < self.p_end
-
-    def coord(self) -> int:
-        return int(self.crd_arr[self.p])
-
-    def pos(self) -> int:
-        return self.p
-
-    def next(self) -> None:
-        self.p += 1
-
-    def seek(self, coord: int) -> None:
-        while self.valid() and self.coord() < coord:
-            self.next()
-
-
-class IteratorFactory:
-    @staticmethod
-    def make_iterator(
-        spec: LevelSpec,
-        storage,
-        *,
-        parent_pos: int | None = None,
-    ) -> SparseIterator:
-        if isinstance(spec, DenseSpec):
-            return DenseCoordinateIterator(spec.size)
-
-        if isinstance(spec, CompressedSpec):
-            p_begin = storage.pos[parent_pos]
-            p_end = storage.pos[parent_pos + 1]
-
-            return CompressedIterator(
-                storage.crd,
-                int(p_begin),
-                int(p_end),
-            )
-
-        if isinstance(spec, SingletonSpec):
-            return CompressedIterator(
-                storage.crd,
-                parent_pos,
-                parent_pos + 1,
-            )
-
-        raise TypeError(f"Unsupported level spec: {type(spec).__name__}")
-
-    @staticmethod
-    def make_root_iterator(level: SparseLevel) -> SparseIterator:
-        if isinstance(level.spec, DenseSpec):
-            return IteratorFactory.make_iterator(level.spec, level.storage)
-        return IteratorFactory.make_iterator(level.spec, level.storage, parent_pos=0)
+        raise TypeError(f"Unknown level spec: {type(spec)}")

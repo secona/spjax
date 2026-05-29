@@ -7,13 +7,15 @@ from jax import lax
 
 from spjax.levels import (
     CompressedSpec,
-    CompressedStorage,
     DenseSpec,
-    DenseStorage,
     LevelSpec,
     SingletonSpec,
-    SingletonStorage,
     SparseLevel,
+)
+from spjax.storage import (
+    CompressedStorage,
+    DenseStorage,
+    SingletonStorage,
 )
 
 

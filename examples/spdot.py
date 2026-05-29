@@ -1,7 +1,8 @@
 import jax
 import jax.numpy as jnp
 
-from spjax.levels import CompressedSpec, CompressedStorage, SparseLevel
+from spjax.levels import CompressedSpec, SparseLevel
+from spjax.storage import CompressedStorage
 from spjax.tensor import SparseTensor
 
 
