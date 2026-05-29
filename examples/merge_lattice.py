@@ -1,34 +1,22 @@
 from spjax.merge_lattice import *
 from spjax.levels import *
+from spjax.tensor import SparseTensor
+
+a = SparseTensor.from_file("./matrix/ibm32.mtx")
+b = SparseTensor.from_file("./matrix/ibm32.mtx")
 
 i = IndexVar("i")
 j = IndexVar("j")
 
-csr = TensorType(
-    shape=(10, 10),
-    level_specs=(
-        CompressedSpec(),
-        SingletonSpec(),
-    ),
-)
-
-dense = TensorType(
-    shape=(10, 10),
-    level_specs=(
-        DenseSpec(10),
-        DenseSpec(10),
-    ),
-)
-
 A = TensorAccess(
     name="A",
-    tensor_type=csr,
+    tensor_type=a.tensor_type,
     ivs=(i, j),
 )
 
 B = TensorAccess(
     name="B",
-    tensor_type=dense,
+    tensor_type=b.tensor_type,
     ivs=(i, j),
 )
 

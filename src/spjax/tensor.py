@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from itertools import product
 
 import jax
@@ -9,10 +10,20 @@ from spjax.levels import (
     CompressedStorage,
     DenseSpec,
     DenseStorage,
+    LevelSpec,
     SingletonSpec,
     SingletonStorage,
     SparseLevel,
 )
+
+
+@dataclass(frozen=True)
+class TensorType:
+    shape: tuple[int, ...]
+    level_specs: tuple[LevelSpec, ...]
+
+    def order(self) -> int:
+        return len(self.shape)
 
 
 @jax.tree_util.register_pytree_node_class
@@ -30,6 +41,13 @@ class SparseTensor:
         self.values = values
         self.shape = shape
         self.lvls = lvls
+
+    @property
+    def tensor_type(self) -> TensorType:
+        return TensorType(
+            shape=self.shape,
+            level_specs=tuple(lvl.spec for lvl in self.lvls),
+        )
 
     # ------------------------------------------------------------------
     # Constructors

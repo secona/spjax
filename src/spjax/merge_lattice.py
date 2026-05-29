@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 from spjax.levels import LevelSpec
+from spjax.tensor import TensorType
 
 # ------------------------------------------------------------------------------
 # Index Variables
@@ -31,16 +32,6 @@ class TensorDimension:
 # ------------------------------------------------------------------------------
 # Tensor Access
 # ------------------------------------------------------------------------------
-
-# TODO: move this to not here. maybe tensor.py?
-@dataclass(frozen=True)
-class TensorType:
-    shape: tuple[int, ...]
-
-    level_specs: tuple[LevelSpec, ...]
-
-    def order(self) -> int:
-        return len(self.shape)
 
 @dataclass
 class TensorAccess:
