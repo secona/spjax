@@ -11,9 +11,7 @@ def sparse_add(a: "SparseTensor", b: "SparseTensor") -> jax.Array:
         raise ValueError(f"Shape mismatch: {a.shape} vs {b.shape}")
 
     if len(a.lvls) != len(b.lvls):
-        raise ValueError(
-            f"Level count mismatch: {len(a.lvls)} vs {len(b.lvls)}"
-        )
+        raise ValueError(f"Level count mismatch: {len(a.lvls)} vs {len(b.lvls)}")
 
     for i, (la, lb) in enumerate(zip(a.lvls, b.lvls)):
         if type(la.spec) is not type(lb.spec):

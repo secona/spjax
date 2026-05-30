@@ -1,19 +1,51 @@
-import jax
 from spjax import SparseTensor
-
-
-@jax.jit
-def spmm(X, Y):
-    return X.dot(Y)
+from spjax.ir import SparseIR
+from spjax.merge_lattice import (
+    AccessExpr,
+    IndexVar,
+    IterationGraph,
+    IterationVar,
+    IterationVarKind,
+    MergeLattice,
+    MulExpr,
+    TensorAccess,
+)
 
 
 def main() -> None:
-    print(jax.devices())
     a = SparseTensor.from_file("./matrix/ibm32.mtx")
     b = SparseTensor.from_file("./matrix/Hamrle1.mtx")
-    c = spmm(a, b)
-    print(c)
-    print(spmm.lower(a, b).as_text())
+
+    i, j, k = IndexVar("i"), IndexVar("j"), IndexVar("k")
+
+    A = TensorAccess("A", a.tensor_type, (i, k))
+    B = TensorAccess("B", b.tensor_type, (k, j))
+
+    print(expr := MulExpr(AccessExpr(A), AccessExpr(B)))
+    print()
+
+    print(
+        graph := IterationGraph(
+            vars=(
+                IterationVar(i, IterationVarKind.SPATIAL),
+                IterationVar(k, IterationVarKind.REDUCTION),
+                IterationVar(j, IterationVarKind.SPATIAL),
+            )
+        )
+    )
+    print()
+
+    print(Li := MergeLattice(expr, i))
+    print()
+
+    print(Lk := MergeLattice(expr, k))
+    print()
+
+    print(Lj := MergeLattice(expr, j))
+    print()
+
+    print(SparseIR(expr, graph, [Li, Lk, Lj]))
+    print()
 
 
 if __name__ == "__main__":

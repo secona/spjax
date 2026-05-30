@@ -107,10 +107,7 @@ class IterationGraph:
     vars: tuple[IterationVar, ...]
 
     def __repr__(self) -> str:
-        return \
-            "IterationGraph(" + \
-            " -> ".join(iv.iv.name for iv in self.vars) + \
-            ")"
+        return "IterationGraph(" + " -> ".join(iv.iv.name for iv in self.vars) + ")"
 
 
 # ------------------------------------------------------------------------------
@@ -148,7 +145,7 @@ class MergeKind(Enum):
 class LatticePoint:
     iterators: tuple[IteratorRef, ...]
     expr: Optional[Expr]
-    children: List['LatticePoint'] = field(default_factory=list)
+    children: List["LatticePoint"] = field(default_factory=list)
 
     def is_terminal(self) -> bool:
         return len(self.iterators) == 0 and self.expr is None
@@ -158,7 +155,7 @@ class LatticePoint:
         indent = "  " * level
         if self.is_terminal():
             return f"{indent}LatticePoint(∅)"
-            
+
         rep = f"{indent}LatticePoint(iters=[{iters}], expr={self.expr})"
         for child in self.children:
             rep += f"\n{child.__repr__(level + 1)}"
@@ -179,15 +176,15 @@ class MergeLattice:
     def _build_recursive(self, expr: Expr) -> LatticePoint:
         if isinstance(expr, AccessExpr):
             iterator = self._make_iterator(expr.access)
-            
+
             node = LatticePoint(
                 iterators=(iterator,),
                 expr=expr,
             )
-            
+
             terminal_node = LatticePoint(iterators=(), expr=None)
             node.children.append(terminal_node)
-            
+
             return node
 
         if isinstance(expr, AddExpr):
@@ -210,18 +207,18 @@ class MergeLattice:
     ) -> LatticePoint:
         merged_iters = self._merge_iters(left_top.iterators, right_top.iterators)
         top_node = LatticePoint(iterators=merged_iters, expr=expr)
-        
+
         full_iters = {it for it in merged_iters if it.is_full()}
-        
+
         if full_iters.issubset(set(left_top.iterators)):
             top_node.children.append(left_top)
-            
+
         if full_iters.issubset(set(right_top.iterators)):
             top_node.children.append(right_top)
-            
+
         if not top_node.children:
             top_node.children.append(LatticePoint(iterators=(), expr=None))
-            
+
         return top_node
 
     def _intersect_lattices(
@@ -232,10 +229,10 @@ class MergeLattice:
     ) -> LatticePoint:
         merged_iters = self._merge_iters(left_top.iterators, right_top.iterators)
         top_node = LatticePoint(iterators=merged_iters, expr=expr)
-        
+
         terminal_node = LatticePoint(iterators=(), expr=None)
         top_node.children.append(terminal_node)
-        
+
         return top_node
 
     def _merge_iters(

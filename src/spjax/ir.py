@@ -42,7 +42,7 @@ class SparseIR:
             return None
 
         body_node = self._lower_dag(root, depth)
-        
+
         if body_node is None:
             return None
 
@@ -60,7 +60,7 @@ class SparseIR:
             iterators=point.iterators,
             body=body,
         )
-        
+
         return node
 
     def _descend(self, expr: Expr, depth: int) -> SparseIRNode:
@@ -76,7 +76,9 @@ class SparseIR:
     def __repr__(self) -> str:
         if self.root is None:
             return "SparseIR(empty)"
-        return f"SparseIR(expr={self.expr}, graph={self.iteration_graph}): \n{self.root}"
+        return (
+            f"SparseIR(expr={self.expr}, graph={self.iteration_graph}): \n{self.root}"
+        )
 
 
 # ------------------------------------------------------------------------------

@@ -1,53 +1,45 @@
-import jax
 import jax.numpy as jnp
 
-from spjax.levels import CompressedSpec, SparseLevel
-from spjax.storage import CompressedStorage
+from spjax.ir import SparseIR
+from spjax.merge_lattice import (
+    AccessExpr,
+    IndexVar,
+    IterationGraph,
+    IterationVar,
+    IterationVarKind,
+    MergeLattice,
+    MulExpr,
+    TensorAccess,
+)
 from spjax.tensor import SparseTensor
 
 
-@jax.jit(static_argnums=(2,))
-def spdot(a, b, size):
-    _, idx_a, idx_b = jnp.intersect1d(
-        a.lvls[0].storage.crd,
-        b.lvls[0].storage.crd,
-        size=size,
-        fill_value=0,
-        return_indices=True,
-    )
-
-    products = a.values[idx_a] * b.values[idx_b]
-    return jnp.sum(products)
-
-
-@jax.jit(static_argnums=(2,))
-def spdot_densify(a, b, size):
-    a_crd = a.lvls[0].storage.crd
-    b_crd = b.lvls[0].storage.crd
-    dense_a = jnp.zeros(size, dtype=a.values.dtype)
-    dense_a = dense_a.at[a_crd].set(a.values)
-    products = dense_a[b_crd] * b.values
-    return jnp.sum(products)
-
-
 def main() -> None:
-    vals = jnp.array([1, 2, 3, 4])
-    shape = (10,)
-    lvl = SparseLevel(
-        CompressedSpec(),
-        CompressedStorage(pos=jnp.array([0, 4]), crd=jnp.array([0, 1, 5, 7])),
+    a = SparseTensor.from_1d(
+        (jnp.array([1, 2, 3, 4]), jnp.array([0, 3, 5, 7])),
+        mode="sparse",
+    )
+    b = SparseTensor.from_1d(
+        (jnp.array([1, 2, 3, 5]), jnp.array([1, 3, 4, 9])),
+        mode="sparse",
     )
 
-    a = SparseTensor(vals, shape, [lvl])
-    b = SparseTensor(vals, shape, [lvl])
+    i = IndexVar("i")
 
-    size = a.lvls[0].storage.pos[1].item()
-    print(spdot(a, b, size))
-    print(spdot.lower(a, b, size).as_text())
+    A = TensorAccess("A", a.tensor_type, (i,))
+    B = TensorAccess("B", b.tensor_type, (i,))
 
-    size = a.shape[0]
-    print(spdot_densify(a, b, size))
-    print(spdot_densify.lower(a, b, size).as_text())
+    print(expr := MulExpr(AccessExpr(A), AccessExpr(B)))
+    print()
+
+    print(graph := IterationGraph(vars=(IterationVar(i, IterationVarKind.REDUCTION),)))
+    print()
+
+    print(Li := MergeLattice(expr, i))
+    print()
+
+    print(SparseIR(expr, graph, [Li]))
+    print()
 
 
 if __name__ == "__main__":

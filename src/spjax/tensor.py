@@ -119,6 +119,28 @@ class SparseTensor:
         coo = scipy.sparse.coo_matrix(arr)
         return cls._from_coo(coo, shape=arr.shape)
 
+    @classmethod
+    def from_1d(cls, arr, mode="sparse") -> "SparseTensor":
+        if mode == "dense":
+            shape = (len(arr),)
+            nnz = jnp.count_nonzero(arr)
+            crd = jnp.nonzero(arr)[0]
+            values = arr[arr != 0]
+        elif mode == "sparse":
+            values, crd = arr
+            nnz = len(values)
+            shape = (int(crd.max()) + 1,)
+        else:
+            raise ValueError(
+                f"Unsupported mode: {mode!r}. Expected 'dense' or 'sparse'."
+            )
+
+        lvl = SparseLevel(
+            CompressedSpec(),
+            CompressedStorage(pos=jnp.array([0, nnz]), crd=crd),
+        )
+        return cls(values, shape, [lvl])
+
     # ---------------------------------------------------------------------------
     # String representation
     # ---------------------------------------------------------------------------
