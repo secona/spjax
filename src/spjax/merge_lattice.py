@@ -177,10 +177,16 @@ class MergeLattice:
         if isinstance(expr, AccessExpr):
             iterator = self._make_iterator(expr.access)
 
-            node = LatticePoint(
-                iterators=(iterator,),
-                expr=expr,
-            )
+            if iterator is None:
+                node = LatticePoint(
+                    iterators=(),
+                    expr=expr,
+                )
+            else:
+                node = LatticePoint(
+                    iterators=(iterator,),
+                    expr=expr,
+                )
 
             terminal_node = LatticePoint(iterators=(), expr=None)
             node.children.append(terminal_node)
@@ -264,7 +270,7 @@ class MergeLattice:
     def _make_iterator(
         self,
         access: TensorAccess,
-    ) -> IteratorRef:
+    ) -> Optional[IteratorRef]:
         for iv, level in zip(
             access.ivs,
             access.tensor_type.level_specs,
@@ -276,7 +282,7 @@ class MergeLattice:
                     level=level,
                 )
 
-        raise RuntimeError(f"Tensor {access.name} does not participate in {self.iv}")
+        return None
 
     def __repr__(self) -> str:
         return f"MergeLattice(iv={self.iv}): \n{self.root}"

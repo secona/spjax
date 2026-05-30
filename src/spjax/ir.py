@@ -30,10 +30,16 @@ class SparseIR:
         self.root: Optional[SparseIRNode] = None
         self._build()
 
-    def _lattice_for(self, iv: IndexVar) -> MergeLattice:
-        if iv not in self.merge_lattices:
-            self.merge_lattices[iv] = MergeLattice(self.expr, iv)
-        return self.merge_lattices[iv]
+    def _lattice_for(self, iv: IndexVar, expr: Optional[Expr] = None) -> MergeLattice:
+        if expr is None:
+            expr = self.expr
+
+        if expr is self.expr:
+            if iv not in self.merge_lattices:
+                self.merge_lattices[iv] = MergeLattice(expr, iv)
+            return self.merge_lattices[iv]
+
+        return MergeLattice(expr, iv)
 
     def _build(self):
         if not self.iteration_graph.vars:
@@ -61,21 +67,33 @@ class SparseIR:
 
         body = self._descend(point.expr, depth)
 
+        if body is None:
+            return None
+
         node = CoiterateNode(
             iterators=point.iterators,
             body=body,
         )
 
-        return node
+        children_nodes = []
+        for child in point.children:
+            child_node = self._lower_dag(child, depth)
+            if child_node is not None:
+                children_nodes.append(child_node)
 
-    def _descend(self, expr: Expr, depth: int) -> SparseIRNode:
+        if not children_nodes:
+            return node
+
+        return SequenceNode(children=(node, *children_nodes))
+
+    def _descend(self, expr: Expr, depth: int) -> Optional[SparseIRNode]:
         if depth == len(self.iteration_graph.vars) - 1:
             coord = tuple(v.iv for v in self.iteration_graph.vars)
             return EmitNode(coord=coord, expr=expr)
 
         next_depth = depth + 1
         next_iv = self.iteration_graph.vars[next_depth].iv
-        next_lattice = self._lattice_for(next_iv)
+        next_lattice = self._lattice_for(next_iv, expr)
 
         return self._build_level(next_lattice.root, next_depth)
 
