@@ -6,6 +6,7 @@ from spjax.merge_lattice import (
     Expr,
     IndexVar,
     IterationGraph,
+    IterationVarKind,
     IteratorRef,
     MergeKind,
     MergeLattice,
@@ -43,34 +44,38 @@ class SparseIR:
             point = points[0]
             body = self._descend(point.expr, depth)
             if len(point.iterators) > 1:
-                return CoiterateNode(
+                node = CoiterateNode(
                     iterators=point.iterators,
                     merge_kind=point.merge_kind,
                     body=body,
                 )
             else:
-                return body
+                node = body
+        else:
+            sorted_points = sorted(points, key=lambda p: len(p.iterators), reverse=True)
+            outer = sorted_points[0]
+            inner = sorted_points[1:]
 
-        sorted_points = sorted(points, key=lambda p: len(p.iterators), reverse=True)
-        outer = sorted_points[0]
-        inner = sorted_points[1:]
+            outer_body = self._descend(outer.expr, depth)
+            inner_bodies = [self._descend(p.expr, depth) for p in inner]
 
-        outer_body = self._descend(outer.expr, depth)
-        inner_bodies = [self._descend(p.expr, depth) for p in inner]
+            children = [outer_body] + inner_bodies
+            body = SequenceNode(tuple(children)) if len(children) > 1 else children[0]
 
-        children = [outer_body] + inner_bodies
-        body = SequenceNode(tuple(children)) if len(children) > 1 else children[0]
+            node = CoiterateNode(
+                iterators=outer.iterators,
+                merge_kind=outer.merge_kind,
+                body=body,
+            )
 
-        return CoiterateNode(
-            iterators=outer.iterators,
-            merge_kind=outer.merge_kind,
-            body=body,
-        )
+        iv = self.iteration_graph.vars[depth].iv
+        kind = self.iteration_graph.vars[depth].kind
+        return ForNode(iv=iv, kind=kind, body=node)
 
     def _descend(self, expr: Expr, depth: int) -> SparseIRNode:
         if depth == len(self.iteration_graph.vars) - 1:
-            iv = self.iteration_graph.vars[depth].iv
-            return EmitNode(coord=iv, expr=expr)
+            coord = tuple(v.iv for v in self.iteration_graph.vars)
+            return EmitNode(coord=coord, expr=expr)
 
         next_depth = depth + 1
         next_iv = self.iteration_graph.vars[next_depth].iv
@@ -81,7 +86,7 @@ class SparseIR:
     def __repr__(self) -> str:
         if self.root is None:
             return "SparseIR(empty)"
-        return f"SparseIR(expr={self.expr}, graph={self.iteration_graph}) {{\n{self.root}\n}}"
+        return f"SparseIR(expr={self.expr}, graph={self.iteration_graph}): \n{self.root}"
 
 
 # ------------------------------------------------------------------------------
@@ -100,32 +105,48 @@ class CoiterateNode(SparseIRNode):
     body: SparseIRNode
 
     def __repr__(self) -> str:
-        return self._format(0)
+        return self._format(1)
 
     def _format(self, indent: int) -> str:
         prefix = "  " * indent
         iters = ", ".join(repr(it) for it in self.iterators)
-        header = f"{prefix}coiterate([{iters}], {self.merge_kind.name})"
+        header = f"{prefix}CoIterateNode([{iters}], {self.merge_kind.name})"
 
-        if isinstance(self.body, (CoiterateNode, SequenceNode)):
+        if isinstance(self.body, (CoiterateNode, SequenceNode, ForNode)):
             body_str = self.body._format(indent + 1)
-            return f"{header} {{\n{body_str}\n{prefix}}}"
+            return f"{header}: \n{body_str}"
         else:
             body_str = self.body._format(indent + 1)
-            return f"{header} {{\n{body_str}\n{prefix}}}"
+            return f"{header}: \n{body_str}"
+
+
+@dataclass(frozen=True)
+class ForNode(SparseIRNode):
+    iv: IndexVar
+    kind: IterationVarKind
+    body: SparseIRNode
+
+    def __repr__(self) -> str:
+        return self._format(1)
+
+    def _format(self, indent: int) -> str:
+        prefix = "  " * indent
+        header = f"{prefix}ForNode({self.iv}, {self.kind.name})"
+        body_str = self.body._format(indent + 1)
+        return f"{header}: \n{body_str}"
 
 
 @dataclass(frozen=True)
 class EmitNode(SparseIRNode):
-    coord: IndexVar
+    coord: tuple[IndexVar, ...]
     expr: Expr
 
     def __repr__(self) -> str:
-        return self._format(0)
+        return self._format(1)
 
     def _format(self, indent: int) -> str:
         prefix = "  " * indent
-        return f"{prefix}emit({self.coord}, {self.expr})"
+        return f"{prefix}EmitNode({self.coord}, {self.expr})"
 
 
 @dataclass(frozen=True)
