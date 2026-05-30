@@ -289,4 +289,4 @@ class MergeLattice:
     def __repr__(self) -> str:
         body = "\n".join(f"  {point}" for point in self.points)
 
-        return f"MergeLattice(iv={self.iv}) {{\n{body}\n}}"
+        return f"MergeLattice(iv={self.iv}): \n{body}"
