@@ -3,8 +3,9 @@ from itertools import product
 
 import jax
 import jax.numpy as jnp
-from jax import lax
 
+
+from spjax import legacy_ops
 from spjax.levels import (
     CompressedSpec,
     DenseSpec,
@@ -221,108 +222,7 @@ class SparseTensor:
     # ---------------------------------------------------------------------------
 
     def add(self, other: "SparseTensor") -> jax.Array:
-        if self.shape != other.shape:
-            raise ValueError(f"Shape mismatch: {self.shape} vs {other.shape}")
-
-        if len(self.lvls) != len(other.lvls):
-            raise ValueError(
-                f"Level count mismatch: {len(self.lvls)} vs {len(other.lvls)}"
-            )
-
-        for i, (la, lb) in enumerate(zip(self.lvls, other.lvls)):
-            if type(la.spec) is not type(lb.spec):
-                raise ValueError(
-                    f"Level {i} format mismatch: {type(la.spec).__name__} vs {type(lb.spec).__name__}"
-                )
-
-        out = jnp.zeros(self.shape, dtype=self.values.dtype)
-        out = self._scatter_tensor(out)
-        out = other._scatter_tensor(out)
-        return out
+        return legacy_ops.sparse_add(self, other)
 
     def dot(self, x: jax.Array) -> jax.Array:
-        if isinstance(x, SparseTensor):
-            x_dense = jnp.zeros(x.shape, dtype=x.values.dtype)
-            x_dense = x._scatter_tensor(x_dense)
-            return self.dot(x_dense)
-
-        if self.shape[1] != x.shape[0]:
-            raise ValueError(f"Shape mismatch for dot: {self.shape} @ {x.shape}")
-
-        result_shape: tuple[int, ...]
-        if x.ndim == 1:
-            result_shape = (self.shape[0],)
-        elif x.ndim == 2:
-            result_shape = (self.shape[0], x.shape[1])
-        else:
-            raise ValueError(f"dot only supports 1D or 2D x, got {x.ndim}D")
-
-        result_dtype = jnp.result_type(self.values.dtype, x.dtype)
-        out = jnp.zeros(result_shape, dtype=result_dtype)
-        return self._gather_dot_tensor(x, out)
-
-    # ---------------------------------------------------------------------------
-    # Internal Operations
-    # ---------------------------------------------------------------------------
-
-    def _gather_dot_inner(self, lvl1, vals, parent_pos, coord0, x, out):
-        p1_begin, p1_end = lvl1.iter_bounds(parent_pos)
-
-        def inner_body(p1, out):
-            coord1 = lvl1.iter_coord(p1)
-            vi = lvl1.value_index(parent_pos, p1)
-            return out.at[coord0].add(vals[vi] * x[coord1])
-
-        return lax.fori_loop(p1_begin, p1_end, inner_body, out)
-
-    def _gather_dot_tensor(self, x, out):
-        lvls = self.lvls
-        vals = self.values
-
-        if len(lvls) != 2:
-            raise NotImplementedError("dot currently supports only 2D tensors")
-
-        if vals.size == 0:
-            return out
-
-        lvl0 = lvls[0]
-        lvl1 = lvls[1]
-
-        p0_begin, p0_end = lvl0.iter_bounds(0)
-
-        def outer_body(p0, out):
-            coord0 = lvl0.iter_coord(p0)
-            return self._gather_dot_inner(lvl1, vals, p0, coord0, x, out)
-
-        return lax.fori_loop(p0_begin, p0_end, outer_body, out)
-
-    def _scatter_inner(self, lvl1, vals, parent_pos, coord0, out):
-        p1_begin, p1_end = lvl1.iter_bounds(parent_pos)
-
-        def inner_body(p1, out):
-            coord1 = lvl1.iter_coord(p1)
-            vi = lvl1.value_index(parent_pos, p1)
-            return out.at[coord0, coord1].add(vals[vi])
-
-        return lax.fori_loop(p1_begin, p1_end, inner_body, out)
-
-    def _scatter_tensor(self, out):
-        lvls = self.lvls
-        vals = self.values
-
-        if len(lvls) != 2:
-            raise NotImplementedError("add currently supports only 2D tensors")
-
-        if vals.size == 0:
-            return out
-
-        lvl0 = lvls[0]
-        lvl1 = lvls[1]
-
-        p0_begin, p0_end = lvl0.iter_bounds(0)
-
-        def outer_body(p0, out):
-            coord0 = lvl0.iter_coord(p0)
-            return self._scatter_inner(lvl1, vals, p0, coord0, out)
-
-        return lax.fori_loop(p0_begin, p0_end, outer_body, out)
+        return legacy_ops.sparse_dot(self, x)

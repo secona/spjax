@@ -1,5 +1,5 @@
 from spjax.tensor import SparseTensor
-from spjax.ops import sparse_add, sparse_dot
+from spjax.legacy_ops import sparse_add, sparse_dot
 
 __all__ = [
     "SparseTensor",
