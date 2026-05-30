@@ -3,8 +3,8 @@ from spjax.merge_lattice import *
 from spjax.levels import *
 from spjax.tensor import SparseTensor
 
-a = SparseTensor.from_file("./matrix/ibm32.mtx")
-b = SparseTensor.from_file("./matrix/ibm32.mtx")
+a = SparseTensor.from_file("./matrix/ibm32.mtx", fmt="csr")
+b = SparseTensor.from_file("./matrix/ibm32.mtx", fmt="coo")
 
 i = IndexVar("i")
 j = IndexVar("j")
@@ -21,33 +21,25 @@ B = TensorAccess(
     ivs=(i, j),
 )
 
-expr = AddExpr(
+print(expr := AddExpr(
     AccessExpr(A),
     AccessExpr(B),
-)
+))
+print()
 
-graph = IterationGraph(
+print(graph := IterationGraph(
     vars=(
         IterationVar(i, IterationVarKind.SPATIAL),
         IterationVar(j, IterationVarKind.SPATIAL),
     )
-)
+))
+print()
 
-print("Expression:")
-print(expr)
+print(Li := MergeLattice(expr, i))
+print()
 
-print("\nIteration Graph:")
-print(graph)
+print(Lj := MergeLattice(expr, j))
+print()
 
-print("\nMerge Lattice for i:")
-print(MergeLattice(expr, i))
-
-print("\nMerge Lattice for j:")
-print(MergeLattice(expr, j))
-
-Li = MergeLattice(expr, i)
-Lj = MergeLattice(expr, j)
-
-print("\nIR:")
-ir = SparseIR(expr, graph, [Li, Lj])
-print(ir)
+print(ir := SparseIR(expr, graph, [Li, Lj]))
+print()

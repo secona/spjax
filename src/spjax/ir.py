@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 from spjax.merge_lattice import (
     Expr,
@@ -8,7 +9,7 @@ from spjax.merge_lattice import (
     IterationGraph,
     IterationVarKind,
     IteratorRef,
-    MergeKind,
+    LatticePoint,
     MergeLattice,
 )
 
@@ -27,50 +28,40 @@ class SparseIR:
         self.expr = expr
         self.iteration_graph = iteration_graph
         self.lattices = lattices
-        self.root: SparseIRNode | None = None
+        self.root: Optional[SparseIRNode] = None
         self._build()
 
     def _build(self):
         if not self.lattices or not self.iteration_graph.vars:
             return
 
-        self.root = self._build_level(self.lattices[0].points, depth=0)
+        self.root = self._build_level(self.lattices[0].root, depth=0)
 
-    def _build_level(self, points, depth: int):
-        if not points:
+    def _build_level(self, root: LatticePoint, depth: int) -> Optional[SparseIRNode]:
+        if root is None or root.is_terminal():
             return None
 
-        if len(points) == 1:
-            point = points[0]
-            body = self._descend(point.expr, depth)
-            if len(point.iterators) > 1:
-                node = CoiterateNode(
-                    iterators=point.iterators,
-                    merge_kind=point.merge_kind,
-                    body=body,
-                )
-            else:
-                node = body
-        else:
-            sorted_points = sorted(points, key=lambda p: len(p.iterators), reverse=True)
-            outer = sorted_points[0]
-            inner = sorted_points[1:]
-
-            outer_body = self._descend(outer.expr, depth)
-            inner_bodies = [self._descend(p.expr, depth) for p in inner]
-
-            children = [outer_body] + inner_bodies
-            body = SequenceNode(tuple(children)) if len(children) > 1 else children[0]
-
-            node = CoiterateNode(
-                iterators=outer.iterators,
-                merge_kind=outer.merge_kind,
-                body=body,
-            )
+        body_node = self._lower_dag(root, depth)
+        
+        if body_node is None:
+            return None
 
         iv = self.iteration_graph.vars[depth].iv
         kind = self.iteration_graph.vars[depth].kind
-        return ForNode(iv=iv, kind=kind, body=node)
+        return ForNode(iv=iv, kind=kind, body=body_node)
+
+    def _lower_dag(self, point: LatticePoint, depth: int) -> Optional[SparseIRNode]:
+        if point.is_terminal():
+            return None
+
+        body = self._descend(point.expr, depth)
+
+        node = CoiterateNode(
+            iterators=point.iterators,
+            body=body,
+        )
+        
+        return node
 
     def _descend(self, expr: Expr, depth: int) -> SparseIRNode:
         if depth == len(self.iteration_graph.vars) - 1:
@@ -78,10 +69,9 @@ class SparseIR:
             return EmitNode(coord=coord, expr=expr)
 
         next_depth = depth + 1
-        next_iv = self.iteration_graph.vars[next_depth].iv
-        next_lattice = MergeLattice(expr, next_iv)
+        next_lattice = self.lattices[next_depth]
 
-        return self._build_level(next_lattice.points, next_depth)
+        return self._build_level(next_lattice.root, next_depth)
 
     def __repr__(self) -> str:
         if self.root is None:
@@ -101,7 +91,6 @@ class SparseIRNode:
 @dataclass(frozen=True)
 class CoiterateNode(SparseIRNode):
     iterators: tuple[IteratorRef, ...]
-    merge_kind: MergeKind
     body: SparseIRNode
 
     def __repr__(self) -> str:
@@ -110,14 +99,10 @@ class CoiterateNode(SparseIRNode):
     def _format(self, indent: int) -> str:
         prefix = "  " * indent
         iters = ", ".join(repr(it) for it in self.iterators)
-        header = f"{prefix}CoIterateNode([{iters}], {self.merge_kind.name})"
+        header = f"{prefix}CoIterateNode([{iters}])"
 
-        if isinstance(self.body, (CoiterateNode, SequenceNode, ForNode)):
-            body_str = self.body._format(indent + 1)
-            return f"{header}: \n{body_str}"
-        else:
-            body_str = self.body._format(indent + 1)
-            return f"{header}: \n{body_str}"
+        body_str = self.body._format(indent + 1)
+        return f"{header}: \n{body_str}"
 
 
 @dataclass(frozen=True)

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
+from typing import List, Optional
 
 from spjax.levels import LevelSpec
 from spjax.tensor import TensorType
@@ -46,7 +47,8 @@ class TensorAccess:
 
     def __repr__(self) -> str:
         ivs = ", ".join(iv.name for iv in self.ivs)
-        return f"{self.name}({ivs})"
+        lvl = ", ".join(spec.name for spec in self.tensor_type.level_specs)
+        return f"{self.name}<{lvl}>({ivs})"
 
 
 # ------------------------------------------------------------------------------
@@ -72,7 +74,7 @@ class AddExpr(Expr):
     right: Expr
 
     def __repr__(self) -> str:
-        return f"({self.left} + {self.right})"
+        return f"Expr({self.left} + {self.right})"
 
 
 @dataclass(frozen=True)
@@ -81,7 +83,7 @@ class MulExpr(Expr):
     right: Expr
 
     def __repr__(self) -> str:
-        return f"({self.left} * {self.right})"
+        return f"Expr({self.left} * {self.right})"
 
 
 # ------------------------------------------------------------------------------
@@ -105,7 +107,10 @@ class IterationGraph:
     vars: tuple[IterationVar, ...]
 
     def __repr__(self) -> str:
-        return " -> ".join(iv.iv.name for iv in self.vars)
+        return \
+            "IterationGraph(" + \
+            " -> ".join(iv.iv.name for iv in self.vars) + \
+            ")"
 
 
 # ------------------------------------------------------------------------------
@@ -120,6 +125,9 @@ class IteratorRef:
     iv: IndexVar
 
     level: LevelSpec
+
+    def is_full(self) -> bool:
+        return self.level.properties.is_full
 
     def __repr__(self) -> str:
         return f"{self.tensor}[{self.iv}]<{self.level.name}>"
@@ -139,21 +147,22 @@ class MergeKind(Enum):
 @dataclass(frozen=True)
 class LatticePoint:
     iterators: tuple[IteratorRef, ...]
+    expr: Optional[Expr]
+    children: List['LatticePoint'] = field(default_factory=list)
 
-    merge_kind: MergeKind
+    def is_terminal(self) -> bool:
+        return len(self.iterators) == 0 and self.expr is None
 
-    expr: Expr
-
-    def __repr__(self) -> str:
+    def __repr__(self, level=0) -> str:
         iters = ", ".join(repr(it) for it in self.iterators)
-
-        return (
-            f"LatticePoint("
-            f"merge={self.merge_kind.name}, "
-            f"iters=[{iters}], "
-            f"expr={self.expr}"
-            f")"
-        )
+        indent = "  " * level
+        if self.is_terminal():
+            return f"{indent}LatticePoint(∅)"
+            
+        rep = f"{indent}LatticePoint(iters=[{iters}], expr={self.expr})"
+        for child in self.children:
+            rep += f"\n{child.__repr__(level + 1)}"
+        return rep
 
 
 # ------------------------------------------------------------------------------
@@ -165,83 +174,69 @@ class MergeLattice:
     def __init__(self, expr: Expr, iv: IndexVar) -> None:
         self.expr = expr
         self.iv = iv
-        self.points: list[LatticePoint] = []
+        self.root = self._build_recursive(self.expr)
 
-        self._build()
-
-    def _build(self):
-        self.points = self._build_recursive(self.expr)
-
-    def _build_recursive(self, expr: Expr) -> list[LatticePoint]:
+    def _build_recursive(self, expr: Expr) -> LatticePoint:
         if isinstance(expr, AccessExpr):
             iterator = self._make_iterator(expr.access)
-            return [
-                LatticePoint(
-                    iterators=(iterator,),
-                    merge_kind=MergeKind.UNION,
-                    expr=expr,
-                )
-            ]
+            
+            node = LatticePoint(
+                iterators=(iterator,),
+                expr=expr,
+            )
+            
+            terminal_node = LatticePoint(iterators=(), expr=None)
+            node.children.append(terminal_node)
+            
+            return node
 
         if isinstance(expr, AddExpr):
-            left_points = self._build_recursive(expr.left)
-            right_points = self._build_recursive(expr.right)
-            return self._union_lattices(left_points, right_points, expr)
+            left_top = self._build_recursive(expr.left)
+            right_top = self._build_recursive(expr.right)
+            return self._union_lattices(left_top, right_top, expr)
 
         if isinstance(expr, MulExpr):
-            left_points = self._build_recursive(expr.left)
-            right_points = self._build_recursive(expr.right)
-            return self._intersect_lattices(left_points, right_points, expr)
+            left_top = self._build_recursive(expr.left)
+            right_top = self._build_recursive(expr.right)
+            return self._intersect_lattices(left_top, right_top, expr)
 
-        return []
+        raise ValueError(f"Unsupported expression type: {type(expr)}")
 
     def _union_lattices(
         self,
-        left: list[LatticePoint],
-        right: list[LatticePoint],
+        left_top: LatticePoint,
+        right_top: LatticePoint,
         expr: Expr,
-    ) -> list[LatticePoint]:
-        result: list[LatticePoint] = []
-
-        for p1 in left:
-            for p2 in right:
-                result.append(
-                    LatticePoint(
-                        iterators=self._merge_iters(p1.iterators, p2.iterators),
-                        merge_kind=MergeKind.UNION,
-                        expr=expr,
-                    )
-                )
-
-        for p1 in left:
-            if not self._is_subset_of_any(p1.iterators, right):
-                result.append(p1)
-
-        for p2 in right:
-            if not self._is_subset_of_any(p2.iterators, left):
-                result.append(p2)
-
-        return result
+    ) -> LatticePoint:
+        merged_iters = self._merge_iters(left_top.iterators, right_top.iterators)
+        top_node = LatticePoint(iterators=merged_iters, expr=expr)
+        
+        full_iters = {it for it in merged_iters if it.is_full()}
+        
+        if full_iters.issubset(set(left_top.iterators)):
+            top_node.children.append(left_top)
+            
+        if full_iters.issubset(set(right_top.iterators)):
+            top_node.children.append(right_top)
+            
+        if not top_node.children:
+            top_node.children.append(LatticePoint(iterators=(), expr=None))
+            
+        return top_node
 
     def _intersect_lattices(
         self,
-        left: list[LatticePoint],
-        right: list[LatticePoint],
+        left_top: LatticePoint,
+        right_top: LatticePoint,
         expr: Expr,
-    ) -> list[LatticePoint]:
-        result: list[LatticePoint] = []
-
-        for p1 in left:
-            for p2 in right:
-                result.append(
-                    LatticePoint(
-                        iterators=self._merge_iters(p1.iterators, p2.iterators),
-                        merge_kind=MergeKind.INTERSECTION,
-                        expr=expr,
-                    )
-                )
-
-        return result
+    ) -> LatticePoint:
+        merged_iters = self._merge_iters(left_top.iterators, right_top.iterators)
+        top_node = LatticePoint(iterators=merged_iters, expr=expr)
+        
+        terminal_node = LatticePoint(iterators=(), expr=None)
+        top_node.children.append(terminal_node)
+        
+        return top_node
 
     def _merge_iters(
         self,
@@ -287,6 +282,4 @@ class MergeLattice:
         raise RuntimeError(f"Tensor {access.name} does not participate in {self.iv}")
 
     def __repr__(self) -> str:
-        body = "\n".join(f"  {point}" for point in self.points)
-
-        return f"MergeLattice(iv={self.iv}): \n{body}"
+        return f"MergeLattice(iv={self.iv}): \n{self.root}"
