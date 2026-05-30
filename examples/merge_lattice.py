@@ -1,3 +1,4 @@
+from spjax.ir import SparseIR
 from spjax.merge_lattice import *
 from spjax.levels import *
 from spjax.tensor import SparseTensor
@@ -43,3 +44,10 @@ print(MergeLattice(expr, i))
 
 print("\nMerge Lattice for j:")
 print(MergeLattice(expr, j))
+
+Li = MergeLattice(expr, i)
+Lj = MergeLattice(expr, j)
+
+print("\nIR:")
+ir = SparseIR(expr, graph, [Li, Lj])
+print(ir)

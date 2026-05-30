@@ -132,7 +132,11 @@ class SparseLevel:
     spec: LevelSpec
     storage: DenseStorage | CompressedStorage | SingletonStorage
 
-    def __init__(self, spec: LevelSpec, storage: DenseStorage | CompressedStorage | SingletonStorage):
+    def __init__(
+        self,
+        spec: LevelSpec,
+        storage: DenseStorage | CompressedStorage | SingletonStorage,
+    ):
         self.spec = spec
         self.storage = storage
 
