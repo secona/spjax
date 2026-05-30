@@ -150,7 +150,7 @@ class LatticePoint:
     def is_terminal(self) -> bool:
         return len(self.iterators) == 0 and self.expr is None
 
-    def __repr__(self, level=0) -> str:
+    def __repr__(self, level=1) -> str:
         iters = ", ".join(repr(it) for it in self.iterators)
         indent = "  " * level
         if self.is_terminal():
