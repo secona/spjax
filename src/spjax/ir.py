@@ -23,19 +23,24 @@ class SparseIR:
         self,
         expr: Expr,
         iteration_graph: IterationGraph,
-        lattices: list[MergeLattice],
     ) -> None:
         self.expr = expr
         self.iteration_graph = iteration_graph
-        self.lattices = lattices
+        self.merge_lattices: dict[IndexVar, MergeLattice] = {}
         self.root: Optional[SparseIRNode] = None
         self._build()
 
+    def _lattice_for(self, iv: IndexVar) -> MergeLattice:
+        if iv not in self.merge_lattices:
+            self.merge_lattices[iv] = MergeLattice(self.expr, iv)
+        return self.merge_lattices[iv]
+
     def _build(self):
-        if not self.lattices or not self.iteration_graph.vars:
+        if not self.iteration_graph.vars:
             return
 
-        self.root = self._build_level(self.lattices[0].root, depth=0)
+        first_iv = self.iteration_graph.vars[0].iv
+        self.root = self._build_level(self._lattice_for(first_iv).root, depth=0)
 
     def _build_level(self, root: LatticePoint, depth: int) -> Optional[SparseIRNode]:
         if root is None or root.is_terminal():
@@ -69,7 +74,8 @@ class SparseIR:
             return EmitNode(coord=coord, expr=expr)
 
         next_depth = depth + 1
-        next_lattice = self.lattices[next_depth]
+        next_iv = self.iteration_graph.vars[next_depth].iv
+        next_lattice = self._lattice_for(next_iv)
 
         return self._build_level(next_lattice.root, next_depth)
 

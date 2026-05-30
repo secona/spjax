@@ -7,7 +7,6 @@ from spjax.merge_lattice import (
     IterationGraph,
     IterationVar,
     IterationVarKind,
-    MergeLattice,
     MulExpr,
     TensorAccess,
 )
@@ -24,27 +23,22 @@ def main() -> None:
 
     expr = MulExpr(AccessExpr(A), AccessExpr(B))
 
-    print(
-        graph := IterationGraph(
-            vars=(
-                IterationVar(i, IterationVarKind.SPATIAL),
-                IterationVar(j, IterationVarKind.REDUCTION),
-            )
+    graph = IterationGraph(
+        vars=(
+            IterationVar(i, IterationVarKind.SPATIAL),
+            IterationVar(j, IterationVarKind.REDUCTION),
         )
     )
+    print(graph)
     print()
 
-    print(Li := MergeLattice(expr, i))
+    ir = SparseIR(expr, graph)
+
+    for iv, lattice in ir.merge_lattices.items():
+        print(lattice)
     print()
 
-    print(Lk := MergeLattice(expr, k))
-    print()
-
-    print(Lj := MergeLattice(expr, j))
-    print()
-
-    print(SparseIR(expr, graph, [Li, Lk, Lj]))
-    print()
+    print(ir)
 
 
 if __name__ == "__main__":
