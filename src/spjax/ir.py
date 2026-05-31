@@ -4,13 +4,17 @@ from dataclasses import dataclass
 from typing import Optional
 
 from spjax.merge_lattice import (
+    AccessExpr,
+    AddExpr,
+    Assignment,
     Expr,
     IndexVar,
     IterationGraph,
     IterationVarKind,
     IteratorRef,
-    LatticePoint,
+    MergeKind,
     MergeLattice,
+    MulExpr,
 )
 
 # ------------------------------------------------------------------------------
@@ -30,72 +34,49 @@ class SparseIR:
         self.root: Optional[SparseIRNode] = None
         self._build()
 
-    def _lattice_for(self, iv: IndexVar, expr: Optional[Expr] = None) -> MergeLattice:
-        if expr is None:
-            expr = self.expr
-
-        if expr is self.expr:
-            if iv not in self.merge_lattices:
-                self.merge_lattices[iv] = MergeLattice(expr, iv)
-            return self.merge_lattices[iv]
-
-        return MergeLattice(expr, iv)
-
     def _build(self):
         if not self.iteration_graph.vars:
             return
 
-        first_iv = self.iteration_graph.vars[0].iv
-        self.root = self._build_level(self._lattice_for(first_iv).root, depth=0)
+        if isinstance(self.expr, Assignment):
+            output = self.expr.lhs
+            rhs = self.expr.rhs
+        else:
+            output = None
+            rhs = self.expr
 
-    def _build_level(self, root: LatticePoint, depth: int) -> Optional[SparseIRNode]:
-        if root is None or root.is_terminal():
-            return None
+        self.root = self._build_level(0, output, rhs)
 
-        body_node = self._lower_dag(root, depth)
-
-        if body_node is None:
-            return None
+    def _build_level(
+        self, depth: int, output: Optional[AccessExpr], rhs: Expr
+    ) -> SparseIRNode:
+        if depth >= len(self.iteration_graph.vars):
+            return EmitNode(output=output, expr=rhs)
 
         iv = self.iteration_graph.vars[depth].iv
         kind = self.iteration_graph.vars[depth].kind
-        return ForNode(iv=iv, kind=kind, body=body_node)
 
-    def _lower_dag(self, point: LatticePoint, depth: int) -> Optional[SparseIRNode]:
-        if point.is_terminal():
-            return None
+        lattice = MergeLattice(rhs, iv)
+        self.merge_lattices[iv] = lattice
 
-        body = self._descend(point.expr, depth)
+        merge_kind = self._get_merge_kind(rhs)
+        body = self._build_level(depth + 1, output, rhs)
 
-        if body is None:
-            return None
-
-        node = CoiterateNode(
-            iterators=point.iterators,
+        coiterate = CoiterateNode(
+            iv=iv,
+            iterators=lattice.root.iterators,
+            merge=merge_kind,
             body=body,
         )
 
-        children_nodes = []
-        for child in point.children:
-            child_node = self._lower_dag(child, depth)
-            if child_node is not None:
-                children_nodes.append(child_node)
+        return ForNode(iv=iv, kind=kind, body=coiterate)
 
-        if not children_nodes:
-            return node
-
-        return SequenceNode(children=(node, *children_nodes))
-
-    def _descend(self, expr: Expr, depth: int) -> Optional[SparseIRNode]:
-        if depth == len(self.iteration_graph.vars) - 1:
-            coord = tuple(v.iv for v in self.iteration_graph.vars)
-            return EmitNode(coord=coord, expr=expr)
-
-        next_depth = depth + 1
-        next_iv = self.iteration_graph.vars[next_depth].iv
-        next_lattice = self._lattice_for(next_iv, expr)
-
-        return self._build_level(next_lattice.root, next_depth)
+    def _get_merge_kind(self, expr: Expr) -> MergeKind:
+        if isinstance(expr, AddExpr):
+            return MergeKind.UNION
+        if isinstance(expr, MulExpr):
+            return MergeKind.INTERSECTION
+        return MergeKind.LOCATE
 
     def __repr__(self) -> str:
         if self.root is None:
@@ -116,7 +97,9 @@ class SparseIRNode:
 
 @dataclass(frozen=True)
 class CoiterateNode(SparseIRNode):
+    iv: IndexVar
     iterators: tuple[IteratorRef, ...]
+    merge: MergeKind
     body: SparseIRNode
 
     def __repr__(self) -> str:
@@ -125,7 +108,7 @@ class CoiterateNode(SparseIRNode):
     def _format(self, indent: int) -> str:
         prefix = "  " * indent
         iters = ", ".join(repr(it) for it in self.iterators)
-        header = f"{prefix}CoIterateNode([{iters}])"
+        header = f"{prefix}CoIterateNode(iv={self.iv}, iterators=[{iters}], merge={self.merge.name})"
 
         body_str = self.body._format(indent + 1)
         return f"{header}: \n{body_str}"
@@ -149,7 +132,7 @@ class ForNode(SparseIRNode):
 
 @dataclass(frozen=True)
 class EmitNode(SparseIRNode):
-    coord: tuple[IndexVar, ...]
+    output: Optional[AccessExpr]
     expr: Expr
 
     def __repr__(self) -> str:
@@ -157,15 +140,4 @@ class EmitNode(SparseIRNode):
 
     def _format(self, indent: int) -> str:
         prefix = "  " * indent
-        return f"{prefix}EmitNode({self.coord}, {self.expr})"
-
-
-@dataclass(frozen=True)
-class SequenceNode(SparseIRNode):
-    children: tuple[SparseIRNode, ...]
-
-    def __repr__(self) -> str:
-        return self._format(0)
-
-    def _format(self, indent: int) -> str:
-        return "\n".join(child._format(indent) for child in self.children)
+        return f"{prefix}EmitNode(output={self.output}, expr={self.expr})"

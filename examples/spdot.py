@@ -3,6 +3,7 @@ import jax.numpy as jnp
 from spjax.ir import SparseIR
 from spjax.merge_lattice import (
     AccessExpr,
+    Assignment,
     IndexVar,
     IterationGraph,
     IterationVar,
@@ -10,7 +11,7 @@ from spjax.merge_lattice import (
     MulExpr,
     TensorAccess,
 )
-from spjax.tensor import SparseTensor
+from spjax.tensor import SparseTensor, TensorType
 
 
 def main() -> None:
@@ -27,8 +28,10 @@ def main() -> None:
 
     A = TensorAccess("A", a.tensor_type, (i,))
     B = TensorAccess("B", b.tensor_type, (i,))
+    out_type = TensorType(shape=(), level_specs=())
+    out = TensorAccess("out", out_type, ())
 
-    expr = MulExpr(AccessExpr(A), AccessExpr(B))
+    expr = Assignment(AccessExpr(out), MulExpr(AccessExpr(A), AccessExpr(B)))
     print(expr)
     print()
 

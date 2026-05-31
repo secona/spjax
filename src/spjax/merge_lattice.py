@@ -86,6 +86,15 @@ class MulExpr(Expr):
         return f"Expr({self.left} * {self.right})"
 
 
+@dataclass(frozen=True)
+class Assignment(Expr):
+    lhs: AccessExpr
+    rhs: Expr
+
+    def __repr__(self) -> str:
+        return f"Expr({self.lhs} = {self.rhs})"
+
+
 # ------------------------------------------------------------------------------
 # Iteration Graph
 # ------------------------------------------------------------------------------
@@ -203,7 +212,16 @@ class MergeLattice:
             right_top = self._build_recursive(expr.right)
             return self._intersect_lattices(left_top, right_top, expr)
 
+        if isinstance(expr, Assignment):
+            right_top = self._build_recursive(expr.rhs)
+            return self._map_assignment(right_top, expr.lhs)
+
         raise ValueError(f"Unsupported expression type: {type(expr)}")
+
+    def _map_assignment(self, point: LatticePoint, lhs: AccessExpr) -> LatticePoint:
+        new_expr = Assignment(lhs, point.expr) if point.expr is not None else None
+        new_children = [self._map_assignment(c, lhs) for c in point.children]
+        return LatticePoint(iterators=point.iterators, expr=new_expr, children=new_children)
 
     def _union_lattices(
         self,

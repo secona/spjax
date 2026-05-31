@@ -3,6 +3,7 @@ from spjax.ir import SparseIR
 from spjax.merge_lattice import (
     AccessExpr,
     AddExpr,
+    Assignment,
     IndexVar,
     IterationGraph,
     IterationVar,
@@ -19,8 +20,9 @@ def main() -> None:
 
     A = TensorAccess("A", a.tensor_type, (i, j))
     B = TensorAccess("B", b.tensor_type, (i, j))
+    C = TensorAccess("C", a.tensor_type, (i, j))
 
-    expr = AddExpr(AccessExpr(A), AccessExpr(B))
+    expr = Assignment(AccessExpr(C), AddExpr(AccessExpr(A), AccessExpr(B)))
     print(expr)
     print()
 
