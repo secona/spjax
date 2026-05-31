@@ -1,5 +1,6 @@
 from spjax import SparseTensor
 from spjax.ir import SparseIR
+from spjax.lowering_ir import lower
 from spjax.levels import DenseSpec
 from spjax.tensor import TensorType
 from spjax.merge_lattice import (
@@ -16,7 +17,7 @@ from spjax.merge_lattice import (
 
 def main() -> None:
     a = SparseTensor.from_file("./matrix/ibm32.mtx")
-    
+
     b_type = TensorType(shape=(32, 32), level_specs=(DenseSpec(32), DenseSpec(32)))
 
     i, j, k = IndexVar("i"), IndexVar("j"), IndexVar("k")
@@ -44,6 +45,10 @@ def main() -> None:
     print()
 
     print(ir)
+    print()
+
+    lowering_ir = lower(ir)
+    print(lowering_ir)
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ class SparseIR:
         lattice = MergeLattice(rhs, iv)
         self.merge_lattices[iv] = lattice
 
-        merge_kind = self._get_merge_kind(rhs)
+        merge_kind = self._get_merge_kind(rhs, lattice)
         body = self._build_level(depth + 1, output, rhs)
 
         coiterate = CoiterateNode(
@@ -71,10 +71,15 @@ class SparseIR:
 
         return ForNode(iv=iv, kind=kind, body=coiterate)
 
-    def _get_merge_kind(self, expr: Expr) -> MergeKind:
+    def _get_merge_kind(self, expr: Expr, lattice: MergeLattice) -> MergeKind:
         if isinstance(expr, AddExpr):
             return MergeKind.UNION
         if isinstance(expr, MulExpr):
+            iterators = lattice.root.iterators
+            any_full = any(it.is_full() for it in iterators)
+            any_sparse = any(not it.is_full() for it in iterators)
+            if any_full and any_sparse:
+                return MergeKind.LOCATE
             return MergeKind.INTERSECTION
         return MergeKind.LOCATE
 

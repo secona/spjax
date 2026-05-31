@@ -221,7 +221,9 @@ class MergeLattice:
     def _map_assignment(self, point: LatticePoint, lhs: AccessExpr) -> LatticePoint:
         new_expr = Assignment(lhs, point.expr) if point.expr is not None else None
         new_children = [self._map_assignment(c, lhs) for c in point.children]
-        return LatticePoint(iterators=point.iterators, expr=new_expr, children=new_children)
+        return LatticePoint(
+            iterators=point.iterators, expr=new_expr, children=new_children
+        )
 
     def _union_lattices(
         self,

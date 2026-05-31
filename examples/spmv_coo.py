@@ -1,6 +1,7 @@
 import jax
 from spjax import SparseTensor
 from spjax.ir import SparseIR
+from spjax.lowering_ir import lower
 from spjax.merge_lattice import (
     AccessExpr,
     Assignment,
@@ -41,6 +42,10 @@ def main() -> None:
     print()
 
     print(ir)
+    print()
+
+    lowering_ir = lower(ir)
+    print(lowering_ir)
 
 
 if __name__ == "__main__":
