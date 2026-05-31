@@ -13,11 +13,6 @@ from spjax.merge_lattice import (
 )
 
 
-@jax.jit
-def spmv(X, y):
-    return X.dot(y)
-
-
 def main() -> None:
     a = SparseTensor.from_file("./matrix/ibm32.mtx")
     b = SparseTensor.from_1d(jax.numpy.ones(32), mode="dense")

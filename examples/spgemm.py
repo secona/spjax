@@ -1,7 +1,5 @@
 from spjax import SparseTensor
 from spjax.ir import SparseIR
-from spjax.levels import DenseSpec
-from spjax.tensor import TensorType
 from spjax.merge_lattice import (
     AccessExpr,
     Assignment,
@@ -16,22 +14,23 @@ from spjax.merge_lattice import (
 
 def main() -> None:
     a = SparseTensor.from_file("./matrix/ibm32.mtx")
-    
-    b_type = TensorType(shape=(32, 32), level_specs=(DenseSpec(32), DenseSpec(32)))
+    b = SparseTensor.from_file("./matrix/Hamrle1.mtx")
 
     i, j, k = IndexVar("i"), IndexVar("j"), IndexVar("k")
 
     A = TensorAccess("A", a.tensor_type, (i, k))
-    B = TensorAccess("B", b_type, (k, j))
-    C = TensorAccess("C", b_type, (i, j))
+    B = TensorAccess("B", b.tensor_type, (k, j))
+    C = TensorAccess("C", a.tensor_type, (i, j))
 
     expr = Assignment(AccessExpr(C), MulExpr(AccessExpr(A), AccessExpr(B)))
+    print(expr)
+    print()
 
     graph = IterationGraph(
         vars=(
             IterationVar(i, IterationVarKind.SPATIAL),
-            IterationVar(j, IterationVarKind.SPATIAL),
             IterationVar(k, IterationVarKind.REDUCTION),
+            IterationVar(j, IterationVarKind.SPATIAL),
         )
     )
     print(graph)
