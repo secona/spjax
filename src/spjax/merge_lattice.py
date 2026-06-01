@@ -236,8 +236,8 @@ class MergeLattice:
             left_top = self._build_recursive(expr.left)
             right_top = self._build_recursive(expr.right)
 
-            # TODO: add tensor_dims
-            top_node = LatticePoint([], expr=expr)
+            tensor_dims = left_top.tensor_dims + right_top.tensor_dims
+            top_node = LatticePoint(tensor_dims, expr=expr)
             top_node.children.append(left_top)
             top_node.children.append(right_top)
 
@@ -247,8 +247,8 @@ class MergeLattice:
             left_top = self._build_recursive(expr.left)
             right_top = self._build_recursive(expr.right)
 
-            # TODO: add tensor_dims
-            top_node = LatticePoint([], expr=expr)
+            tensor_dims = left_top.tensor_dims + right_top.tensor_dims
+            top_node = LatticePoint(tensor_dims, expr=expr)
             top_node.children.append(self.terminal_node)
 
             return top_node
