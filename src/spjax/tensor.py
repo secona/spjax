@@ -5,7 +5,6 @@ import jax
 import jax.numpy as jnp
 
 
-from spjax import legacy_ops
 from spjax.levels import (
     CompressedSpec,
     DenseSpec,
@@ -240,13 +239,3 @@ class SparseTensor:
         values, lvls = children
         (shape,) = aux_data
         return cls(values, shape, lvls)
-
-    # ---------------------------------------------------------------------------
-    # Operations
-    # ---------------------------------------------------------------------------
-
-    def add(self, other: "SparseTensor") -> jax.Array:
-        return legacy_ops.sparse_add(self, other)
-
-    def dot(self, x: jax.Array) -> jax.Array:
-        return legacy_ops.sparse_dot(self, x)
