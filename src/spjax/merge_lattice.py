@@ -191,6 +191,10 @@ class LatticePoint:
     children: List["LatticePoint"] = field(default_factory=list)
     """The successor points in the lattice"""
 
+    @staticmethod
+    def create_terminal() -> "LatticePoint":
+        return LatticePoint([], None, [])
+
     def is_terminal(self) -> bool:
         return len(self.children) == 0 and self.expr is None
 
@@ -218,14 +222,14 @@ class MergeLattice:
     def __init__(self, expr: Expr, iv: IndexVar) -> None:
         self.expr = expr
         self.iv = iv
+        self.terminal_node = LatticePoint.create_terminal()
         self.root = self._build_recursive(self.expr)
 
     def _build_recursive(self, expr: Expr) -> LatticePoint:
         if isinstance(expr, AccessExpr):
             tensor_dims = [TensorDimension(expr.access.name, self.iv)]
             node = LatticePoint(tensor_dims, expr=expr)
-            terminal_node = LatticePoint(tensor_dims=[], expr=None)
-            node.children.append(terminal_node)
+            node.children.append(self.terminal_node)
             return node
 
         if isinstance(expr, AddExpr):
@@ -243,11 +247,9 @@ class MergeLattice:
             left_top = self._build_recursive(expr.left)
             right_top = self._build_recursive(expr.right)
 
-            terminal_node = LatticePoint([], expr=None)
-
             # TODO: add tensor_dims
             top_node = LatticePoint([], expr=expr)
-            top_node.children.append(terminal_node)
+            top_node.children.append(self.terminal_node)
 
             return top_node
 
