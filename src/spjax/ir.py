@@ -64,7 +64,6 @@ class SparseIR:
 
         coiterate = CoiterateNode(
             iv=iv,
-            iterators=lattice.root.iterators,
             merge=merge_kind,
             body=body,
         )
@@ -75,11 +74,6 @@ class SparseIR:
         if isinstance(expr, AddExpr):
             return MergeKind.UNION
         if isinstance(expr, MulExpr):
-            iterators = lattice.root.iterators
-            any_full = any(it.is_full() for it in iterators)
-            any_sparse = any(not it.is_full() for it in iterators)
-            if any_full and any_sparse:
-                return MergeKind.LOCATE
             return MergeKind.INTERSECTION
         return MergeKind.LOCATE
 
@@ -103,7 +97,6 @@ class SparseIRNode:
 @dataclass(frozen=True)
 class CoiterateNode(SparseIRNode):
     iv: IndexVar
-    iterators: tuple[IteratorRef, ...]
     merge: MergeKind
     body: SparseIRNode
 
@@ -112,8 +105,7 @@ class CoiterateNode(SparseIRNode):
 
     def _format(self, indent: int) -> str:
         prefix = "  " * indent
-        iters = ", ".join(repr(it) for it in self.iterators)
-        header = f"{prefix}CoIterateNode(iv={self.iv}, iterators=[{iters}], merge={self.merge.name})"
+        header = f"{prefix}CoIterateNode(iv={self.iv}, merge={self.merge.name})"
 
         body_str = self.body._format(indent + 1)
         return f"{header}: \n{body_str}"

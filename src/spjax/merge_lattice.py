@@ -172,9 +172,6 @@ class MergeKind(Enum):
 class LatticePoint:
     """Represents a point in the MergeLattice"""
 
-    iterators: tuple[IteratorRef, ...]
-    """The set of iterators active at this point in the lattice"""
-
     expr: Optional[Expr]
     """The expression to be evaluated at this point"""
 
@@ -182,15 +179,14 @@ class LatticePoint:
     """The successor points in the lattice"""
 
     def is_terminal(self) -> bool:
-        return len(self.iterators) == 0 and self.expr is None
+        return len(self.children) == 0 and self.expr is None
 
     def __repr__(self, level=1) -> str:
-        iters = ", ".join(repr(it) for it in self.iterators)
         indent = "  " * level
         if self.is_terminal():
             return f"{indent}LatticePoint(∅)"
 
-        rep = f"{indent}LatticePoint(iters=[{iters}], expr={self.expr})"
+        rep = f"{indent}LatticePoint(expr={self.expr})"
         for child in self.children:
             rep += f"\n{child.__repr__(level + 1)}"
         return rep
@@ -211,22 +207,9 @@ class MergeLattice:
 
     def _build_recursive(self, expr: Expr) -> LatticePoint:
         if isinstance(expr, AccessExpr):
-            iterator = self._make_iterator(expr.access)
-
-            if iterator is None:
-                node = LatticePoint(
-                    iterators=(),
-                    expr=expr,
-                )
-            else:
-                node = LatticePoint(
-                    iterators=(iterator,),
-                    expr=expr,
-                )
-
-            terminal_node = LatticePoint(iterators=(), expr=None)
+            node = LatticePoint(expr=expr)
+            terminal_node = LatticePoint(expr=None)
             node.children.append(terminal_node)
-
             return node
 
         if isinstance(expr, AddExpr):
@@ -248,9 +231,7 @@ class MergeLattice:
     def _map_assignment(self, point: LatticePoint, lhs: AccessExpr) -> LatticePoint:
         new_expr = Assignment(lhs, point.expr) if point.expr is not None else None
         new_children = [self._map_assignment(c, lhs) for c in point.children]
-        return LatticePoint(
-            iterators=point.iterators, expr=new_expr, children=new_children
-        )
+        return LatticePoint(expr=new_expr, children=new_children)
 
     def _union_lattices(
         self,
@@ -258,20 +239,9 @@ class MergeLattice:
         right_top: LatticePoint,
         expr: Expr,
     ) -> LatticePoint:
-        merged_iters = self._merge_iters(left_top.iterators, right_top.iterators)
-        top_node = LatticePoint(iterators=merged_iters, expr=expr)
-
-        full_iters = {it for it in merged_iters if it.is_full()}
-
-        if full_iters.issubset(set(left_top.iterators)):
-            top_node.children.append(left_top)
-
-        if full_iters.issubset(set(right_top.iterators)):
-            top_node.children.append(right_top)
-
-        if not top_node.children:
-            top_node.children.append(LatticePoint(iterators=(), expr=None))
-
+        top_node = LatticePoint(expr=expr)
+        top_node.children.append(left_top)
+        top_node.children.append(right_top)
         return top_node
 
     def _intersect_lattices(
@@ -280,10 +250,9 @@ class MergeLattice:
         right_top: LatticePoint,
         expr: Expr,
     ) -> LatticePoint:
-        merged_iters = self._merge_iters(left_top.iterators, right_top.iterators)
-        top_node = LatticePoint(iterators=merged_iters, expr=expr)
+        top_node = LatticePoint(expr=expr)
 
-        terminal_node = LatticePoint(iterators=(), expr=None)
+        terminal_node = LatticePoint(expr=None)
         top_node.children.append(terminal_node)
 
         return top_node
@@ -301,18 +270,6 @@ class MergeLattice:
                 seen.add(key)
                 merged.append(it)
         return tuple(merged)
-
-    def _is_subset_of_any(
-        self,
-        iters: tuple[IteratorRef, ...],
-        points: list[LatticePoint],
-    ) -> bool:
-        iters_set = set((it.tensor, it.iv.name, it.level.name) for it in iters)
-        for p in points:
-            p_set = set((it.tensor, it.iv.name, it.level.name) for it in p.iterators)
-            if iters_set.issubset(p_set):
-                return True
-        return False
 
     def _make_iterator(
         self,

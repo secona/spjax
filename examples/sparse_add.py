@@ -40,6 +40,7 @@ def main() -> None:
 
     for iv, lattice in ir.merge_lattices.items():
         print(lattice)
+        print()
     print()
 
     print(ir)

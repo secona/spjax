@@ -7,7 +7,6 @@ from spjax.merge_lattice import (
     AccessExpr,
     Expr,
     IndexVar,
-    IteratorRef,
     MergeKind,
 )
 from spjax.ir import (
@@ -32,7 +31,6 @@ class LoweringIRNode:
 @dataclass(frozen=True)
 class DenseTraverseNode(LoweringIRNode):
     iv: IndexVar
-    iterator: IteratorRef
     body: LoweringIRNode
 
     def __repr__(self) -> str:
@@ -40,7 +38,7 @@ class DenseTraverseNode(LoweringIRNode):
 
     def _format(self, indent: int) -> str:
         prefix = "  " * indent
-        header = f"{prefix}DenseTraverseNode(iv={self.iv}, iterator={self.iterator})"
+        header = f"{prefix}DenseTraverseNode(iv={self.iv})"
         body_str = self.body._format(indent + 1)
         return f"{header}: \n{body_str}"
 
@@ -48,7 +46,6 @@ class DenseTraverseNode(LoweringIRNode):
 @dataclass(frozen=True)
 class UnionMergeNode(LoweringIRNode):
     iv: IndexVar
-    iterators: tuple[IteratorRef, ...]
     body: LoweringIRNode
 
     def __repr__(self) -> str:
@@ -56,8 +53,7 @@ class UnionMergeNode(LoweringIRNode):
 
     def _format(self, indent: int) -> str:
         prefix = "  " * indent
-        iters = ", ".join(repr(it) for it in self.iterators)
-        header = f"{prefix}UnionMergeNode(iv={self.iv}, iterators=[{iters}])"
+        header = f"{prefix}UnionMergeNode(iv={self.iv})"
         body_str = self.body._format(indent + 1)
         return f"{header}: \n{body_str}"
 
@@ -65,7 +61,6 @@ class UnionMergeNode(LoweringIRNode):
 @dataclass(frozen=True)
 class IntersectionMergeNode(LoweringIRNode):
     iv: IndexVar
-    iterators: tuple[IteratorRef, ...]
     body: LoweringIRNode
 
     def __repr__(self) -> str:
@@ -73,8 +68,7 @@ class IntersectionMergeNode(LoweringIRNode):
 
     def _format(self, indent: int) -> str:
         prefix = "  " * indent
-        iters = ", ".join(repr(it) for it in self.iterators)
-        header = f"{prefix}IntersectionMergeNode(iv={self.iv}, iterators=[{iters}])"
+        header = f"{prefix}IntersectionMergeNode(iv={self.iv})"
         body_str = self.body._format(indent + 1)
         return f"{header}: \n{body_str}"
 
@@ -82,7 +76,6 @@ class IntersectionMergeNode(LoweringIRNode):
 @dataclass(frozen=True)
 class LocateNode(LoweringIRNode):
     iv: IndexVar
-    iterators: tuple[IteratorRef, ...]
     body: LoweringIRNode
 
     def __repr__(self) -> str:
@@ -90,8 +83,7 @@ class LocateNode(LoweringIRNode):
 
     def _format(self, indent: int) -> str:
         prefix = "  " * indent
-        iters = ", ".join(repr(it) for it in self.iterators)
-        header = f"{prefix}LocateNode(iv={self.iv}, iterators=[{iters}])"
+        header = f"{prefix}LocateNode(iv={self.iv})"
         body_str = self.body._format(indent + 1)
         return f"{header}: \n{body_str}"
 
@@ -146,26 +138,16 @@ class LoweringIR:
 
             coiterate = node.body
             iv = node.iv
-            iterators = coiterate.iterators
             body = self._lower_node(coiterate.body)
 
-            if len(iterators) == 1 and iterators[0].is_full():
-                return DenseTraverseNode(iv=iv, iterator=iterators[0], body=body)
-
             if coiterate.merge == MergeKind.UNION:
-                return UnionMergeNode(iv=iv, iterators=iterators, body=body)
+                return UnionMergeNode(iv=iv, body=body)
 
             if coiterate.merge == MergeKind.INTERSECTION:
-                any_full = any(it.is_full() for it in iterators)
-                any_sparse = any(not it.is_full() for it in iterators)
-
-                if any_full and any_sparse:
-                    return LocateNode(iv=iv, iterators=iterators, body=body)
-
-                return IntersectionMergeNode(iv=iv, iterators=iterators, body=body)
+                return IntersectionMergeNode(iv=iv, body=body)
 
             if coiterate.merge == MergeKind.LOCATE:
-                return LocateNode(iv=iv, iterators=iterators, body=body)
+                return LocateNode(iv=iv, body=body)
 
             raise ValueError(f"Unsupported merge kind: {coiterate.merge}")
 
