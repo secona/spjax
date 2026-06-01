@@ -185,6 +185,9 @@ class LatticePoint:
     tensor_dims: list[TensorDimension]
     """The set of input tensor dimensions"""
 
+    merge_kind: Optional[MergeKind]
+    """Merge kind for tensor dimensions"""
+
     expr: Optional[Expr]
     """The expression to be evaluated at this point"""
 
@@ -193,7 +196,7 @@ class LatticePoint:
 
     @staticmethod
     def create_terminal() -> "LatticePoint":
-        return LatticePoint([], None, [])
+        return LatticePoint(tensor_dims=[], merge_kind=None, expr=None, children=[])
 
     def is_terminal(self) -> bool:
         return len(self.children) == 0 and self.expr is None
@@ -205,7 +208,7 @@ class LatticePoint:
 
         dims = "{" + ", ".join(str(d) for d in self.tensor_dims) + "}"
 
-        rep = f"{indent}LatticePoint(dims={dims}, expr={self.expr})"
+        rep = f"{indent}LatticePoint(dims={dims}, merge_kind={self.merge_kind}, expr={self.expr})"
         for child in self.children:
             rep += f"\n{child.__repr__(level + 1)}"
         return rep
@@ -228,7 +231,7 @@ class MergeLattice:
     def _build_recursive(self, expr: Expr) -> LatticePoint:
         if isinstance(expr, AccessExpr):
             tensor_dims = [TensorDimension(expr.access.name, self.iv)]
-            node = LatticePoint(tensor_dims, expr=expr)
+            node = LatticePoint(tensor_dims=tensor_dims, merge_kind=None, expr=expr)
             node.children.append(self.terminal_node)
             return node
 
@@ -237,7 +240,7 @@ class MergeLattice:
             right_top = self._build_recursive(expr.right)
 
             tensor_dims = left_top.tensor_dims + right_top.tensor_dims
-            top_node = LatticePoint(tensor_dims, expr=expr)
+            top_node = LatticePoint(tensor_dims=tensor_dims, merge_kind=MergeKind.INTERSECTION, expr=expr)
             top_node.children.append(left_top)
             top_node.children.append(right_top)
 
@@ -248,7 +251,7 @@ class MergeLattice:
             right_top = self._build_recursive(expr.right)
 
             tensor_dims = left_top.tensor_dims + right_top.tensor_dims
-            top_node = LatticePoint(tensor_dims, expr=expr)
+            top_node = LatticePoint(tensor_dims=tensor_dims, merge_kind=MergeKind.UNION, expr=expr)
             top_node.children.append(self.terminal_node)
 
             return top_node
@@ -262,38 +265,7 @@ class MergeLattice:
     def _map_assignment(self, point: LatticePoint, lhs: AccessExpr) -> LatticePoint:
         new_expr = Assignment(lhs, point.expr) if point.expr is not None else None
         new_children = [self._map_assignment(c, lhs) for c in point.children]
-        return LatticePoint([], expr=new_expr, children=new_children)
-
-    def _merge_iters(
-        self,
-        a: tuple[IteratorRef, ...],
-        b: tuple[IteratorRef, ...],
-    ) -> tuple[IteratorRef, ...]:
-        seen: set[tuple[str, str, str]] = set()
-        merged: list[IteratorRef] = []
-        for it in a + b:
-            key = (it.tensor, it.iv.name, it.level.name)
-            if key not in seen:
-                seen.add(key)
-                merged.append(it)
-        return tuple(merged)
-
-    def _make_iterator(
-        self,
-        access: TensorAccess,
-    ) -> Optional[IteratorRef]:
-        for iv, level in zip(
-            access.ivs,
-            access.tensor_type.level_specs,
-        ):
-            if iv == self.iv:
-                return IteratorRef(
-                    tensor=access.name,
-                    iv=iv,
-                    level=level,
-                )
-
-        return None
+        return LatticePoint(tensor_dims=[], merge_kind=None, expr=new_expr, children=new_children)
 
     def __repr__(self) -> str:
         return f"MergeLattice(iv={self.iv}): \n{self.root}"
