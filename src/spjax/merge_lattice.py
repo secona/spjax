@@ -15,23 +15,12 @@ from spjax.tensor import TensorType
 
 @dataclass(frozen=True)
 class IndexVar:
+    """A symbolic representation of a loop index (e.g., 'i', 'j', 'k')"""
+
     name: str
 
     def __repr__(self) -> str:
         return self.name
-
-
-# ------------------------------------------------------------------------------
-# Logical Tensor Dimension
-# ------------------------------------------------------------------------------
-
-
-@dataclass
-class TensorDimension:
-    iv: IndexVar
-
-    def __repr__(self) -> str:
-        return self.iv.name
 
 
 # ------------------------------------------------------------------------------
@@ -41,9 +30,17 @@ class TensorDimension:
 
 @dataclass
 class TensorAccess:
+    """Represents a tensor being accessed with a specific set of index variables"""
+
     name: str
+    """The identifier of the tensor"""
+
     tensor_type: TensorType
+    """The storage format and type information"""
+
     ivs: tuple[IndexVar, ...]
+    """The index variables used for this access"""
+
 
     def __repr__(self) -> str:
         ivs = ", ".join(iv.name for iv in self.ivs)
@@ -101,18 +98,27 @@ class Assignment(Expr):
 
 
 class IterationVarKind(Enum):
+    """Defines the role of an index variable in a loop nest"""
+
     SPATIAL = auto()
+    """Dimensions that appear in the output tensor"""
+
     REDUCTION = auto()
+    """Dimensions that are collapsed (e.g., summed over)"""
 
 
 @dataclass(frozen=True)
 class IterationVar:
+    """Represents an index variable and its role (spatial or reduction)"""
+
     iv: IndexVar
     kind: IterationVarKind
 
 
 @dataclass(frozen=True)
 class IterationGraph:
+    """Represents the ordered sequence of loops (the loop nest)"""
+
     vars: tuple[IterationVar, ...]
 
     def __repr__(self) -> str:
@@ -126,11 +132,16 @@ class IterationGraph:
 
 @dataclass(frozen=True)
 class IteratorRef:
+    """A reference to a specific level of a tensor being iterated."""
+
     tensor: str
+    """Name of the tensor"""
 
     iv: IndexVar
+    """The index variable iterating over this level"""
 
     level: LevelSpec
+    """The specific storage level (e.g., compressed, dense)"""
 
     def is_full(self) -> bool:
         return self.level.properties.is_full
@@ -145,16 +156,30 @@ class IteratorRef:
 
 
 class MergeKind(Enum):
+    """Specifies how multiple iteration spaces are merged together"""
+
     UNION = auto()
+    """Iterate if ANY tensor has a value (e.g., addition)"""
+
     INTERSECTION = auto()
+    """Iterate only if ALL tensors have values (e.g., multiplication)"""
+
     LOCATE = auto()
+    """Access a specific coordinate (e.g., indexing into a dense dimension)"""
 
 
 @dataclass(frozen=True)
 class LatticePoint:
+    """Represents a point in the MergeLattice"""
+
     iterators: tuple[IteratorRef, ...]
+    """The set of iterators active at this point in the lattice"""
+
     expr: Optional[Expr]
+    """The expression to be evaluated at this point"""
+
     children: List["LatticePoint"] = field(default_factory=list)
+    """The successor points in the lattice"""
 
     def is_terminal(self) -> bool:
         return len(self.iterators) == 0 and self.expr is None
@@ -177,6 +202,8 @@ class LatticePoint:
 
 
 class MergeLattice:
+    "Represents the merge lattice for expression `expr` with index variable `iv`"
+
     def __init__(self, expr: Expr, iv: IndexVar) -> None:
         self.expr = expr
         self.iv = iv
